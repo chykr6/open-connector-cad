@@ -9,6 +9,8 @@ param(
     [string]$Poles,
 
     [string]$BodyColor,
+    [string]$CoverColor,
+    [string]$HousingColors,
     [string]$ActuatorColors,
     [string]$TerminalPinColor,
     [string]$Variant,
@@ -39,6 +41,8 @@ $request = @{
     pitch = $Pitch
     poles = $Poles
     body_color = $BodyColor
+    cover_color = $CoverColor
+    housing_colors = $HousingColors
     actuator_colors = $ActuatorColors
     terminal_pin_color = $TerminalPinColor
     variant = $Variant

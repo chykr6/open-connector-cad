@@ -43,17 +43,26 @@ def normalize_color(value):
     raise ValueError("unsupported color: %s" % value)
 
 
-def expand_colors(specification, poles):
+def expand_colors(specification, poles, component="actuator"):
     values = [item.strip() for item in str(specification).split(",") if item.strip()]
     colors = [normalize_color(item) for item in values]
     if len(colors) == 1:
         return colors * int(poles)
     if len(colors) != int(poles):
         raise ValueError(
-            "actuator color count must be 1 or match poles (%d), got %d"
-            % (int(poles), len(colors))
+            "%s color count must be 1 or match poles (%d), got %d"
+            % (str(component), int(poles), len(colors))
         )
     return colors
+
+
+def pin_to_geometry_index(poles, pin_number):
+    """将靠近高 X 侧盖的逻辑 Pin 编号映射到现有几何索引。"""
+    poles = int(poles)
+    pin_number = int(pin_number)
+    if pin_number < 1 or pin_number > poles:
+        raise ValueError("pin number must be between 1 and %d" % poles)
+    return poles - pin_number
 
 
 def output_stem(series, pitch, poles, variant=None):
@@ -355,7 +364,20 @@ def add_feature(doc, container, name, label, shape, color, kind, pole_index=0):
     return obj
 
 
-def add_parameters(doc, assembly, profile, poles, body_color, actuator_colors, pin_color, variant):
+def add_parameters(
+    doc,
+    assembly,
+    profile,
+    poles,
+    body_color,
+    actuator_colors,
+    pin_color,
+    variant,
+    cover_color=None,
+    housing_colors=None,
+):
+    cover_color = normalize_color(cover_color or body_color)
+    housing_colors = housing_colors or [body_color] * int(poles)
     obj = doc.addObject("App::FeaturePython", "Parameters")
     obj.Label = "Connector generation parameters"
     values = (
@@ -364,7 +386,9 @@ def add_parameters(doc, assembly, profile, poles, body_color, actuator_colors, p
         ("App::PropertyString", "PitchCode", pitch_code(profile["pitch"])),
         ("App::PropertyString", "Variant", str(variant or "")),
         ("App::PropertyString", "BodyColor", normalize_color(body_color)),
+        ("App::PropertyString", "CoverColor", cover_color),
         ("App::PropertyString", "TerminalPinColor", normalize_color(pin_color)),
+        ("App::PropertyString", "PinNumberingDirection", "CoverSideHighXToLowX"),
         ("App::PropertyString", "LeverHingeSide", "Rear"),
         ("App::PropertyString", "LeverState", "Closed"),
     )
@@ -393,6 +417,8 @@ def add_parameters(doc, assembly, profile, poles, body_color, actuator_colors, p
     obj.PinRowPitch = float(profile["pin_row_pitch"])
     obj.addProperty("App::PropertyStringList", "ActuatorColors", "Generation")
     obj.ActuatorColors = [normalize_color(color) for color in actuator_colors]
+    obj.addProperty("App::PropertyStringList", "HousingColors", "Generation")
+    obj.HousingColors = [normalize_color(color) for color in housing_colors]
     assembly.addObject(obj)
     return obj
 
@@ -405,12 +431,18 @@ def generate_one(
     terminal_pin_color,
     variant=None,
     output_dir=None,
+    cover_color=None,
+    housing_colors=None,
 ):
     poles = int(poles)
     if poles <= 0:
         raise ValueError("poles must be positive")
     if len(actuator_colors) != poles:
         raise ValueError("actuator color count must match poles")
+    cover_color = normalize_color(cover_color or body_color)
+    housing_colors = housing_colors or [body_color] * poles
+    if len(housing_colors) != poles:
+        raise ValueError("housing color count must match poles")
 
     connector_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     base_dir = output_dir or os.path.join(
@@ -441,12 +473,14 @@ def generate_one(
         actuator_colors,
         terminal_pin_color,
         variant,
+        cover_color,
+        housing_colors,
     )
 
     export_objects = []
-    # 按从左到右的顺序创建电气模块、压杆和两根焊脚。
-    for index in range(poles):
-        pole_no = index + 1
+    # 逻辑 Pin 1 从高 X 侧盖向低 X 编号，几何和 PCB 坐标保持不变。
+    for pole_no in range(1, poles + 1):
+        index = pin_to_geometry_index(poles, pole_no)
         pole = doc.addObject("App::Part", "Pole_%d" % pole_no)
         pole.Label = "Pole %d Module" % pole_no
         assembly.addObject(pole)
@@ -457,7 +491,7 @@ def generate_one(
                 "Housing_P%d" % pole_no,
                 "Housing P%d" % pole_no,
                 make_housing(profile, poles, index),
-                body_color,
+                housing_colors[pole_no - 1],
                 "Housing",
                 pole_no,
             )
@@ -469,7 +503,7 @@ def generate_one(
                 "Actuator_P%d" % pole_no,
                 "Actuator P%d" % pole_no,
                 make_actuator(profile, index),
-                actuator_colors[index],
+                actuator_colors[pole_no - 1],
                 "Actuator",
                 pole_no,
             )
@@ -495,7 +529,7 @@ def generate_one(
             "SideCover",
             "%g mm Side Cover" % float(profile["cover_width"]),
             make_side_cover(profile, poles),
-            body_color,
+            cover_color,
             "SideCover",
         )
     )
@@ -535,6 +569,8 @@ def build_argument_parser():
     parser.add_argument("--pitch", required=True, type=float)
     parser.add_argument("--poles", required=True, help="One value or comma-separated values")
     parser.add_argument("--body-color")
+    parser.add_argument("--cover-color")
+    parser.add_argument("--housing-colors")
     parser.add_argument("--actuator-colors")
     parser.add_argument("--terminal-pin-color")
     parser.add_argument("--variant")
@@ -556,12 +592,15 @@ def main(argv=None):
     profile = load_profile(args.series, args.pitch, connector_dir)
     defaults = profile["default_colors"]
     body_color = normalize_color(args.body_color or defaults["body"])
+    cover_color = normalize_color(args.cover_color or body_color)
     pin_color = normalize_color(args.terminal_pin_color or defaults["terminal_pin"])
     pole_counts = parse_poles(args.poles)
     results = []
     for poles in pole_counts:
         color_spec = args.actuator_colors or defaults["actuator"]
-        actuator_colors = expand_colors(color_spec, poles)
+        housing_spec = args.housing_colors or body_color
+        housing_colors = expand_colors(housing_spec, poles, "housing")
+        actuator_colors = expand_colors(color_spec, poles, "actuator")
         variant = args.variant or derive_variant(color_spec)
         results.append(
             generate_one(
@@ -572,6 +611,8 @@ def main(argv=None):
                 pin_color,
                 variant,
                 args.output_dir,
+                cover_color,
+                housing_colors,
             )
         )
     for result in results:

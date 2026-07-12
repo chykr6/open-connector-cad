@@ -4,9 +4,9 @@
 
 当前已实现：
 
-- DA803，3.50 mm 间距；
-- 任意极数，例如 1P、2P、3P、4P、8P；
-- 主体、逐极压杆和金属焊脚独立配色；
+- DA803，3.50 mm 和 5.00 mm 独立尺寸 profile；
+- 任意极数，例如 1P、2P、3P、4P、8P、12P；
+- 侧盖、逐极塑料主体、逐极压杆和金属焊脚独立配色；
 - 动态装配树和推荐 PCB 焊脚布局验证；
 - Windows PowerShell 命令入口。
 
@@ -52,6 +52,8 @@ $env:FREECAD_PYTHON = 'C:\Program Files\FreeCAD 1.0\bin\python.exe'
   -Pitch 3.5 `
   -Poles '3' `
   -BodyColor black `
+  -CoverColor black `
+  -HousingColors black `
   -ActuatorColors 'black,blue,green' `
   -TerminalPinColor silver `
   -Variant black-blue-green
@@ -86,11 +88,20 @@ $env:FREECAD_PYTHON = 'C:\Program Files\FreeCAD 1.0\bin\python.exe'
 
 颜色接受内置英文名称或 `#RRGGBB`：
 
-- `-BodyColor`：电气模块和侧盖；
-- `-ActuatorColors`：一个颜色应用全部极，或按从左到右提供与极数相同的列表；
+- `-BodyColor`：兼容旧命令，作为主体和侧盖的默认颜色；
+- `-CoverColor`：独立侧盖颜色，省略时回退到 `BodyColor`；
+- `-HousingColors`：一个颜色应用全部极，或提供与极数相同的列表；
+- `-ActuatorColors`：一个颜色应用全部极，或提供与极数相同的列表；
 - `-TerminalPinColor`：PCB 金属焊脚。
 
-颜色数量与极数不匹配时，生成器会终止并报告错误。
+主体和压杆颜色列表均按 Pin 1 → Pin N 输入。侧盖位于高 X 侧，因此 Pin 1 是最靠近侧盖、X 坐标最大的一极；列表数量不是 1 或极数时，生成器会终止并报告错误。编号变化不会移动侧盖或 PCB 焊脚坐标。
+
+生成轴测预览：
+
+```powershell
+& '.\DA_CONNECTOR\tools\render_connector.ps1' `
+  -Model '.\DA_CONNECTOR\products\DA803\generated\DA803-500\DA803-500-2P-black-red.FCStd'
+```
 
 ## 添加新间距或产品
 

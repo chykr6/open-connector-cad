@@ -3,12 +3,32 @@
 
 import argparse
 import os
+import re
 
 import FreeCAD as App
 import Part
 
 
 TOLERANCE = 0.03
+
+
+def parse_step_colors(text):
+    number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[-+]?\d+)?"
+    pattern = re.compile(
+        r"COLOUR_RGB\('',\s*(%s)\s*,\s*(%s)\s*,\s*(%s)\s*\)"
+        % (number, number, number),
+        re.IGNORECASE | re.DOTALL,
+    )
+    return [tuple(float(value) for value in match) for match in pattern.findall(text)]
+
+
+def contains_rgb(colors, hex_color, tolerance=0.002):
+    value = str(hex_color).lstrip("#")
+    expected = tuple(int(value[index : index + 2], 16) / 255.0 for index in (0, 2, 4))
+    return any(
+        all(abs(actual - target) <= tolerance for actual, target in zip(color, expected))
+        for color in colors
+    )
 
 
 def assert_close(actual, expected, label, tolerance=TOLERANCE):
@@ -18,7 +38,7 @@ def assert_close(actual, expected, label, tolerance=TOLERANCE):
         )
 
 
-def verify_model(fcstd_path, step_path=None):
+def verify_model(fcstd_path, step_path=None, require_step_colors=True):
     """检查尺寸、零件数量、颜色元数据和 STEP 实体数量。"""
     fcstd_path = os.path.abspath(fcstd_path)
     step_path = os.path.abspath(step_path or os.path.splitext(fcstd_path)[0] + ".step")
@@ -36,6 +56,10 @@ def verify_model(fcstd_path, step_path=None):
     pitch = float(params.Pitch)
     cover_width = float(params.CoverWidth)
     expected_parts = poles * 4 + 1
+    cover_side_numbering = (
+        hasattr(params, "PinNumberingDirection")
+        and params.PinNumberingDirection == "CoverSideHighXToLowX"
+    )
     # 装配结构必须随极数动态增长：每极 1 外壳、1 压杆、2 焊脚。
     housings = [doc.getObject("Housing_P%d" % index) for index in range(1, poles + 1)]
     actuators = [doc.getObject("Actuator_P%d" % index) for index in range(1, poles + 1)]
@@ -54,14 +78,29 @@ def verify_model(fcstd_path, step_path=None):
         if obj.Shape.isNull() or not obj.Shape.isValid() or obj.Shape.Volume <= 0:
             raise AssertionError("invalid component geometry: %s" % obj.Name)
 
+    housing_colors = (
+        list(params.HousingColors)
+        if hasattr(params, "HousingColors")
+        else [params.BodyColor] * poles
+    )
+    if len(housing_colors) != poles:
+        raise AssertionError("housing color metadata count mismatch")
     for index, housing in enumerate(housings):
+        geometry_index = poles - index - 1 if cover_side_numbering else index
         assert_close(housing.Shape.BoundBox.XLength, pitch, "housing width")
-        assert_close(housing.Shape.BoundBox.Center.x, pitch * (index + 0.5), "pole center")
-        if housing.ConfiguredColor != params.BodyColor:
+        assert_close(
+            housing.Shape.BoundBox.Center.x,
+            pitch * (geometry_index + 0.5),
+            "pole center",
+        )
+        if housing.ConfiguredColor != housing_colors[index]:
             raise AssertionError("housing color mismatch: %s" % housing.Name)
     assert_close(cover.Shape.BoundBox.XLength, cover_width, "cover width")
     assert_close(cover.Shape.BoundBox.XMin, poles * pitch, "cover start")
-    if cover.ConfiguredColor != params.BodyColor:
+    expected_cover_color = (
+        params.CoverColor if hasattr(params, "CoverColor") else params.BodyColor
+    )
+    if cover.ConfiguredColor != expected_cover_color:
         raise AssertionError("side cover color mismatch")
 
     actuator_colors = list(params.ActuatorColors)
@@ -76,7 +115,8 @@ def verify_model(fcstd_path, step_path=None):
 
     # 焊脚坐标必须与推荐 PCB layout 一致：横向按 pitch 递增，纵向两排间距固定。
     for index in range(1, poles + 1):
-        expected_x = float(params.PinFirstX) + (index - 1) * pitch
+        geometry_index = poles - index if cover_side_numbering else index - 1
+        expected_x = float(params.PinFirstX) + geometry_index * pitch
         front_pin = doc.getObject("Pin_P%d_A" % index)
         rear_pin = doc.getObject("Pin_P%d_B" % index)
         assert_close(front_pin.Shape.BoundBox.Center.x, expected_x, "pin column X")
@@ -91,7 +131,25 @@ def verify_model(fcstd_path, step_path=None):
     assert_close(body.BoundBox.XLength, poles * pitch + cover_width, "overall width")
     assert_close(body.BoundBox.YLength, float(params.Depth), "body depth")
     assert_close(body.BoundBox.ZLength, float(params.BodyHeight), "body height")
+    configured_colors = set(housing_colors + actuator_colors)
+    configured_colors.add(expected_cover_color)
+    configured_colors.add(params.TerminalPinColor)
     App.closeDocument(doc.Name)
+
+    with open(step_path, "r", encoding="utf-8") as stream:
+        step_text = stream.read()
+    step_lines = step_text.splitlines()
+    if any(line.endswith((" ", "\t")) for line in step_lines):
+        raise AssertionError("STEP contains trailing whitespace")
+    if require_step_colors:
+        step_colors = parse_step_colors(step_text)
+        if not step_colors:
+            raise AssertionError("STEP does not contain color entities")
+        missing = [
+            color for color in configured_colors if not contains_rgb(step_colors, color)
+        ]
+        if missing:
+            raise AssertionError("STEP missing configured colors: %s" % ", ".join(missing))
 
     # 重新导入 STEP，确认交换文件不是空壳且实体数量没有丢失。
     step_doc = App.newDocument("StepVerification")

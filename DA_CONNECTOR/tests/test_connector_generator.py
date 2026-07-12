@@ -15,6 +15,7 @@ if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
 import connector_generator as generator
+import connector_verify as verifier
 
 
 class GeneratorParameterTests(unittest.TestCase):
@@ -34,7 +35,24 @@ class GeneratorParameterTests(unittest.TestCase):
             ["#202020", "#202020", "#202020"],
         )
 
-    def test_actuator_color_list_maps_left_to_right(self):
+    def test_single_housing_color_expands_to_all_pins(self):
+        self.assertEqual(
+            generator.expand_colors("red", 4, "housing"),
+            ["#D9291C"] * 4,
+        )
+
+    def test_housing_color_count_must_match_pins(self):
+        with self.assertRaisesRegex(ValueError, "housing color count"):
+            generator.expand_colors("black,red", 4, "housing")
+
+    def test_pin_numbers_run_from_high_x_cover_side_to_low_x(self):
+        self.assertEqual(generator.pin_to_geometry_index(4, 1), 3)
+        self.assertEqual(generator.pin_to_geometry_index(4, 2), 2)
+        self.assertEqual(generator.pin_to_geometry_index(4, 4), 0)
+        with self.assertRaisesRegex(ValueError, "pin number"):
+            generator.pin_to_geometry_index(4, 0)
+
+    def test_actuator_color_list_maps_pin1_to_pin_n(self):
         self.assertEqual(
             generator.expand_colors("black,blue,green", 3),
             ["#202020", "#1565C0", "#2E8B57"],
@@ -85,6 +103,40 @@ class GeneratorParameterTests(unittest.TestCase):
         self.assertEqual(profile["pitch"], 3.5)
         self.assertEqual(profile["cover_width"], 1.5)
 
+    def test_da803_500_profile_uses_datasheet_dimensions(self):
+        profile = generator.load_profile("DA803", 5.0, CONNECTOR_DIR)
+        self.assertEqual(profile["pitch"], 5.0)
+        self.assertEqual(profile["cover_width"], 1.5)
+        self.assertEqual(profile["depth"], 12.5)
+        self.assertEqual(profile["body_height"], 10.6)
+        self.assertEqual(profile["open_height"], 15.9)
+        self.assertEqual(profile["pin_length"], 3.0)
+        self.assertEqual(profile["pin_width"], 0.8)
+        self.assertEqual(profile["pin_thickness"], 0.5)
+        self.assertEqual(profile["pin_x_first"], 3.0)
+        self.assertEqual(profile["pin_y_front"], 4.6)
+        self.assertEqual(profile["pin_row_pitch"], 5.0)
+        self.assertEqual(profile["pcb_hole"], 1.3)
+        self.assertAlmostEqual(generator.overall_width(profile, 2), 11.5)
+
+    def test_step_color_parser_reads_rgb_entities_across_line_breaks(self):
+        colors = verifier.parse_step_colors(
+            "#1=COLOUR_RGB('',0.125490201081,0.125490201081,\n"
+            "0.125490201081);\n"
+            "#2=COLOUR_RGB('',0.850980411111,0.160784315601,0.109803919806);"
+        )
+        self.assertTrue(verifier.contains_rgb(colors, "#202020"))
+        self.assertTrue(verifier.contains_rgb(colors, "#D9291C"))
+        self.assertFalse(verifier.contains_rgb(colors, "#1565C0"))
+
+    def test_preview_path_defaults_next_to_fcstd(self):
+        import connector_render
+
+        self.assertEqual(
+            connector_render.preview_path_for_model(r"C:\models\part.FCStd"),
+            r"C:\models\part.png",
+        )
+
 
 class GeneratorIntegrationTests(unittest.TestCase):
     def tearDown(self):
@@ -98,6 +150,8 @@ class GeneratorIntegrationTests(unittest.TestCase):
                 profile=profile,
                 poles=2,
                 body_color="#202020",
+                cover_color="#D9291C",
+                housing_colors=["#202020", "#1565C0"],
                 actuator_colors=["#202020", "#1565C0"],
                 terminal_pin_color="#C0C0C0",
                 variant="black-blue",
@@ -120,6 +174,8 @@ class GeneratorIntegrationTests(unittest.TestCase):
             params = doc.getObject("Parameters")
             self.assertEqual(params.Poles, 2)
             self.assertEqual(params.BodyColor, "#202020")
+            self.assertEqual(params.CoverColor, "#D9291C")
+            self.assertEqual(list(params.HousingColors), ["#202020", "#1565C0"])
             self.assertEqual(list(params.ActuatorColors), ["#202020", "#1565C0"])
             self.assertAlmostEqual(float(params.PinFirstX), 2.25, places=6)
             self.assertAlmostEqual(float(params.PinFrontY), 4.60, places=6)
@@ -128,6 +184,25 @@ class GeneratorIntegrationTests(unittest.TestCase):
             self.assertIsNone(doc.getObject("Housing_P3"))
             self.assertEqual(doc.getObject("Actuator_P1").ConfiguredColor, "#202020")
             self.assertEqual(doc.getObject("Actuator_P2").ConfiguredColor, "#1565C0")
+            self.assertEqual(doc.getObject("Housing_P1").ConfiguredColor, "#202020")
+            self.assertEqual(doc.getObject("Housing_P2").ConfiguredColor, "#1565C0")
+            self.assertEqual(doc.getObject("SideCover").ConfiguredColor, "#D9291C")
+
+            # Pin 1 靠近高 X 侧盖；只改变逻辑编号，不移动原 PCB 坐标列。
+            self.assertGreater(
+                doc.getObject("Housing_P1").Shape.BoundBox.Center.x,
+                doc.getObject("Housing_P2").Shape.BoundBox.Center.x,
+            )
+            self.assertEqual(
+                {obj.Name for obj in doc.getObject("Pole_1").Group},
+                {"Housing_P1", "Actuator_P1", "Pin_P1_A", "Pin_P1_B"},
+            )
+            self.assertAlmostEqual(
+                doc.getObject("Pin_P1_A").Shape.BoundBox.Center.x, 5.75, places=6
+            )
+            self.assertAlmostEqual(
+                doc.getObject("Pin_P2_A").Shape.BoundBox.Center.x, 2.25, places=6
+            )
 
             expected_names = (
                 ["Housing_P1", "Housing_P2", "SideCover"]
@@ -327,6 +402,101 @@ class GeneratorIntegrationTests(unittest.TestCase):
         self.assertAlmostEqual(pin_2a.BoundBox.Center.x, 5.75, places=6)
         self.assertAlmostEqual(pin_1a.BoundBox.Center.y, 4.60, places=6)
         self.assertAlmostEqual(pin_1b.BoundBox.Center.y, 9.60, places=6)
+
+    def test_da803_500_terminal_pin_centers_match_datasheet_pcb_layout(self):
+        profile = generator.load_profile("DA803", 5.0, CONNECTOR_DIR)
+        pin_low_x_front = generator.make_terminal_pin(profile, 0, 0)
+        pin_high_x_front = generator.make_terminal_pin(profile, 1, 0)
+        pin_low_x_rear = generator.make_terminal_pin(profile, 0, 1)
+
+        self.assertAlmostEqual(pin_low_x_front.BoundBox.Center.x, 3.0, places=6)
+        self.assertAlmostEqual(pin_high_x_front.BoundBox.Center.x, 8.0, places=6)
+        # 图纸的 2.90 是后排孔到后边缘：12.50-2.90=9.60；
+        # 前排再向进线正面偏移一个 5.00 mm 排距，得到 4.60。
+        self.assertAlmostEqual(pin_low_x_front.BoundBox.Center.y, 4.6, places=6)
+        self.assertAlmostEqual(pin_low_x_rear.BoundBox.Center.y, 9.6, places=6)
+
+    def test_da803_500_pin1_is_high_x_and_colors_map_from_cover_side(self):
+        profile = generator.load_profile("DA803", 5.0, CONNECTOR_DIR)
+        with tempfile.TemporaryDirectory() as output_dir:
+            result = generator.generate_one(
+                profile=profile,
+                poles=2,
+                body_color="#202020",
+                actuator_colors=["#202020", "#D9291C"],
+                terminal_pin_color="#C0C0C0",
+                variant="black-red",
+                output_dir=output_dir,
+                cover_color="#202020",
+                housing_colors=["#202020", "#D9291C"],
+            )
+            doc = App.openDocument(result["fcstd"])
+            self.assertAlmostEqual(doc.getObject("Pin_P1_A").Shape.BoundBox.Center.x, 8.0)
+            self.assertAlmostEqual(doc.getObject("Pin_P2_A").Shape.BoundBox.Center.x, 3.0)
+            self.assertEqual(doc.getObject("Housing_P1").ConfiguredColor, "#202020")
+            self.assertEqual(doc.getObject("Housing_P2").ConfiguredColor, "#D9291C")
+            self.assertEqual(doc.getObject("Actuator_P1").ConfiguredColor, "#202020")
+            self.assertEqual(doc.getObject("Actuator_P2").ConfiguredColor, "#D9291C")
+
+    def test_dynamic_4p_8p_12p_part_counts_follow_generic_formula(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        for poles in (4, 8, 12):
+            with self.subTest(poles=poles), tempfile.TemporaryDirectory() as output_dir:
+                result = generator.generate_one(
+                    profile=profile,
+                    poles=poles,
+                    body_color="#202020",
+                    actuator_colors=["#202020"] * poles,
+                    terminal_pin_color="#C0C0C0",
+                    variant="part-count",
+                    output_dir=output_dir,
+                    cover_color="#202020",
+                    housing_colors=["#202020"] * poles,
+                )
+                self.assertEqual(result["parts"], poles * 4 + 1)
+
+    def test_verifier_accepts_cover_side_pin_numbering_and_independent_colors(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        with tempfile.TemporaryDirectory() as output_dir:
+            result = generator.generate_one(
+                profile=profile,
+                poles=2,
+                body_color="#202020",
+                actuator_colors=["#D9291C", "#2E8B57"],
+                terminal_pin_color="#C0C0C0",
+                variant="verify-new-numbering",
+                output_dir=output_dir,
+                cover_color="#1565C0",
+                housing_colors=["#202020", "#D9291C"],
+            )
+            verified = verifier.verify_model(
+                result["fcstd"], result["step"], require_step_colors=False
+            )
+            self.assertEqual(verified["poles"], 2)
+            self.assertEqual(verified["parts"], 9)
+
+    def test_legacy_body_color_defaults_housings_and_cover(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        with tempfile.TemporaryDirectory() as output_dir:
+            result = generator.generate_one(
+                profile=profile,
+                poles=2,
+                body_color="#D9291C",
+                actuator_colors=["#202020", "#202020"],
+                terminal_pin_color="#C0C0C0",
+                variant="legacy-body-color",
+                output_dir=output_dir,
+            )
+            doc = App.openDocument(result["fcstd"])
+            self.assertEqual(doc.getObject("Parameters").BodyColor, "#D9291C")
+            self.assertEqual(doc.getObject("Parameters").CoverColor, "#D9291C")
+            self.assertEqual(
+                list(doc.getObject("Parameters").HousingColors),
+                ["#D9291C", "#D9291C"],
+            )
+            self.assertEqual(doc.getObject("Housing_P1").ConfiguredColor, "#D9291C")
+            self.assertEqual(doc.getObject("Housing_P2").ConfiguredColor, "#D9291C")
+            self.assertEqual(doc.getObject("SideCover").ConfiguredColor, "#D9291C")
 
 
 if __name__ == "__main__":
