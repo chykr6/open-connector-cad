@@ -38,9 +38,11 @@
 
 ## 输出
 
-- `DA_CONNECTOR/DA803-350-3P.FCStd`
-- `DA_CONNECTOR/DA803-350-3P.step`
-- `DA_CONNECTOR/build_da803_3p.py`
+- `DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.FCStd`
+- `DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.step`
+- `DA_CONNECTOR/connector_generator.py`
+
+当前模型由通用生成器和 `profiles/DA803-350.json` 共同定义。旧 3P 专用生成脚本已移动到 `DA_CONNECTOR/legacy/`，只用于历史对照。
 
 ## 验收标准
 

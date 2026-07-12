@@ -30,15 +30,18 @@
 - `FCStd` 是可编辑主模型，`STEP` 是交换文件，预览 PNG 用于快速外观检查。
 - 图纸明确标注的尺寸优先于照片比例；估算尺寸必须记录在设计文档或脚本参数中。
 - 模块化端子应将电气模块、侧盖、压杆和焊脚作为独立装配实体保存。
-- 修改生成器后，应重新生成 FCStd、STEP 和预览图，并运行验证脚本。
+- 不同间距使用独立 JSON profile；不得把 3.5 mm 模型按比例缩放成 5.0 mm 或 7.5 mm 型号。
+- 极数和逐极压杆颜色通过通用命令生成器传入，不得复制 2P、4P、8P 专用 Python 生成脚本。
+- 修改生成器后，应重新生成 FCStd 和 STEP，并运行通用验证脚本；需要外观检查时再生成预览图。
 
 ## 验证要求
 
-DA803 3P 模型的标准验证命令：
+通用端子模型的标准验证命令：
 
 ```powershell
-$env:DA803_DIR='E:\.proj\3D\DA_CONNECTOR'
-& 'D:\destool\FreeCAD\bin\FreeCADCmd.exe' -c "p=r'E:\.proj\3D\DA_CONNECTOR\verify_da803_3p.py'; exec(compile(open(p,encoding='utf-8').read(),p,'exec'),{'__name__':'__main__','__file__':p})"
+& 'D:\destool\FreeCAD\bin\python.exe' `
+  'E:\.proj\3D\DA_CONNECTOR\connector_verify.py' `
+  'E:\.proj\3D\DA_CONNECTOR\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
 ```
 
 只有在命令退出码为 0，并输出 `VERIFY_OK` 后，才能声称模型通过验证。
@@ -48,4 +51,3 @@ $env:DA803_DIR='E:\.proj\3D\DA_CONNECTOR'
 - 保留用户已有模型和不相关修改，不得擅自覆盖或删除。
 - FreeCAD 自动生成的 `.FCBak` 和 Python `__pycache__` 不进入版本库。
 - 移动或重命名文件时同步更新 README、设计文档和脚本中的路径引用。
-

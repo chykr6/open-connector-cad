@@ -1,5 +1,7 @@
 # DA803 3P Implementation Plan
 
+> 历史计划：本计划记录最初的 3P 专用实现。当前入口已被 `connector-generator-implementation.md` 中的通用生成器取代，旧脚本保存在 `DA_CONNECTOR/legacy/`。
+
 > **For agentic workers:** Execute inline in the current session; no subagent delegation was requested.
 
 **Goal:** Build and verify a script-generated DA803 3P FreeCAD assembly for PCBA visualization.
@@ -21,7 +23,7 @@
 ### Task 1: Parametric builder and assembly tree
 
 **Files:**
-- Create: `DA_CONNECTOR/build_da803_3p.py`
+- Historical: `DA_CONNECTOR/legacy/build_da803_3p.py`
 
 - [ ] Define all drawing dimensions and estimated display-detail dimensions in one `PARAMS` mapping.
 - [ ] Implement housing, lever, and pin solid builders.
@@ -32,7 +34,7 @@
 ### Task 2: Geometry generation and verification
 
 **Files:**
-- Create: `DA_CONNECTOR/verify_da803_3p.py`
+- Historical: `DA_CONNECTOR/legacy/verify_da803_3p.py`
 - Generate: `DA_CONNECTOR/DA803-350-3P.FCStd`
 - Generate: `DA_CONNECTOR/DA803-350-3P.step`
 

@@ -1,0 +1,25 @@
+{
+  "series": "DA803",
+  "pitch": 3.5,
+  "cover_width": 1.5,
+  "depth": 12.5,
+  "body_height": 10.6,
+  "open_height": 15.93,
+  "pin_length": 3.5,
+  "pin_width": 0.8,
+  "pin_thickness": 0.5,
+  "pin_row_pitch": 5.0,
+  "pin_y_front": 3.3,
+  "pcb_hole": 1.3,
+  "wire_opening_radius": 1.35,
+  "wire_opening_depth": 4.35,
+  "actuator_width": 2.7,
+  "actuator_length": 7.3,
+  "actuator_thickness": 1.0,
+  "actuator_angle": 0.0,
+  "default_colors": {
+    "body": "#8C8C8C",
+    "actuator": "#202020",
+    "terminal_pin": "#C0C0C0"
+  }
+}
