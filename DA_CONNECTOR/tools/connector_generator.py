@@ -112,6 +112,14 @@ def safe_fillet(shape, radius):
     return shape
 
 
+def normalize_step_file(path):
+    """移除 FreeCAD STEP 导出器产生的行尾空白，保持文本 diff 干净。"""
+    with open(path, "r", encoding="utf-8") as stream:
+        lines = stream.read().splitlines()
+    with open(path, "w", encoding="utf-8", newline="\n") as stream:
+        stream.write("\n".join(line.rstrip() for line in lines) + "\n")
+
+
 def make_front_slope_cut(profile, x_start, width):
     """创建主体和侧盖共用的前上缘倒角切削体。"""
     slope_length = float(profile["body_front_slope_length"])
@@ -130,6 +138,81 @@ def make_front_slope_cut(profile, x_start, width):
     return Part.Face(slope_wire).extrude(App.Vector(float(width) + 0.20, 0, 0))
 
 
+def make_wire_opening(profile, center_x, radial_offset=0.0, start_y=-0.05, depth=None):
+    """创建宽下腔、窄圆拱顶部的正面进线口切削体。"""
+    if depth is None:
+        depth = float(profile["wire_opening_depth"])
+    lower_radius = float(profile["wire_opening_lower_radius"]) + float(radial_offset)
+    lower_center_z = float(profile["wire_opening_lower_center_z"])
+    shoulder_z = float(profile["wire_opening_shoulder_z"])
+    arch_radius = float(profile["wire_opening_arch_radius"]) + float(radial_offset)
+    arch_center_z = float(profile["wire_opening_arch_center_z"])
+
+    lower_round = Part.makeCylinder(
+        lower_radius,
+        depth,
+        App.Vector(float(center_x), start_y, lower_center_z),
+        App.Vector(0, 1, 0),
+    )
+    lower_box = Part.makeBox(
+        lower_radius * 2.0,
+        depth,
+        shoulder_z - lower_center_z,
+        App.Vector(float(center_x) - lower_radius, start_y, lower_center_z),
+    )
+    upper_box = Part.makeBox(
+        arch_radius * 2.0,
+        depth,
+        arch_center_z - shoulder_z,
+        App.Vector(float(center_x) - arch_radius, start_y, shoulder_z),
+    )
+    upper_arch = Part.makeCylinder(
+        arch_radius,
+        depth,
+        App.Vector(float(center_x), start_y, arch_center_z),
+        App.Vector(0, 1, 0),
+    )
+    return lower_round.fuse(lower_box).fuse(upper_box).fuse(upper_arch)
+
+
+def make_top_channel_cut(profile, center_x):
+    """创建带斜坡底面的压杆通道，使鼻头下方保留承托斜面。"""
+    half_width = float(profile["top_channel_width"]) / 2.0
+    start_x = float(center_x) - half_width
+    body_height = float(profile["body_height"])
+    front_y = float(profile["top_channel_front_y"])
+    rear_y = float(profile["top_channel_rear_y"])
+    channel_floor = float(profile["top_channel_floor_z"])
+    slope_start_y = float(profile["top_channel_slope_start_y"])
+    slope_end_y = float(profile["top_channel_slope_end_y"])
+    front_floor_z = float(profile["top_channel_front_floor_z"])
+    channel_wire = Part.makePolygon(
+        [
+            App.Vector(start_x, front_y, body_height + 0.20),
+            App.Vector(start_x, rear_y, body_height + 0.20),
+            App.Vector(start_x, rear_y, channel_floor),
+            App.Vector(start_x, slope_end_y, channel_floor),
+            App.Vector(start_x, slope_start_y, front_floor_z),
+            App.Vector(start_x, front_y, front_floor_z),
+            App.Vector(start_x, front_y, body_height + 0.20),
+        ]
+    )
+    return Part.Face(channel_wire).extrude(App.Vector(half_width * 2.0, 0, 0))
+
+
+def cut_side_dimples(shape, profile, x_start, direction):
+    """按 profile 在暴露侧面切出浅圆形注塑凹点。"""
+    for y_pos, z_pos, radius in profile.get("side_dimples", []):
+        pocket = Part.makeCylinder(
+            float(radius),
+            0.32,
+            App.Vector(float(x_start), float(y_pos), float(z_pos)),
+            App.Vector(float(direction), 0, 0),
+        )
+        shape = shape.cut(pocket)
+    return shape
+
+
 def make_housing(profile, poles, index):
     """生成一个电气模块外壳；每极宽度严格等于 pitch。"""
     pitch = float(profile["pitch"])
@@ -141,44 +224,33 @@ def make_housing(profile, poles, index):
         float(profile["body_height"]),
         App.Vector(left, 0, 0),
     )
-    shape = safe_fillet(shape, 0.18)
+    shape = safe_fillet(shape, float(profile["body_edge_radius"]))
 
-    # 正面进线口由圆形下部和矩形上部组合成钥匙孔轮廓。
-    round_opening = Part.makeCylinder(
-        float(profile["wire_opening_radius"]),
-        float(profile["wire_opening_depth"]),
-        App.Vector(center, -0.05, 4.0),
-        App.Vector(0, 1, 0),
+    # 正面先做浅而略大的入口倒角，再切正式深腔，形成清晰的两级边缘。
+    rim_depth = float(profile["wire_opening_rim_depth"])
+    rim = make_wire_opening(
+        profile,
+        center,
+        radial_offset=float(profile["wire_opening_bevel"]),
+        start_y=-0.05,
+        depth=rim_depth + 0.05,
     )
-    upper_slot = Part.makeBox(
-        2.20,
-        float(profile["wire_opening_depth"]),
-        4.10,
-        App.Vector(center - 1.10, -0.05, 4.0),
+    inner = make_wire_opening(
+        profile,
+        center,
+        start_y=rim_depth,
+        depth=float(profile["wire_opening_depth"]) - rim_depth,
     )
-    shape = shape.cut(round_opening.fuse(upper_slot))
+    shape = shape.cut(rim.fuse(inner))
 
     # 顶部通道给压杆留出运动和装配空间。
-    top_channel = Part.makeBox(
-        2.82,
-        8.75,
-        2.15,
-        App.Vector(center - 1.41, 0.75, 8.62),
-    )
-    shape = shape.cut(top_channel)
+    shape = shape.cut(make_top_channel_cut(profile, center))
 
     # 主体前上缘切出斜坡，给手指从压杆下方进入的空间。
     shape = shape.cut(make_front_slope_cut(profile, left, pitch))
 
     if int(index) == 0:
-        for y_pos, z_pos in ((2.4, 3.0), (7.3, 3.0), (4.7, 7.1), (9.6, 7.1)):
-            pocket = Part.makeCylinder(
-                0.48,
-                0.32,
-                App.Vector(left - 0.05, y_pos, z_pos),
-                App.Vector(1, 0, 0),
-            )
-            shape = shape.cut(pocket)
+        shape = cut_side_dimples(shape, profile, left - 0.05, 1)
     return shape.removeSplitter()
 
 
@@ -191,35 +263,27 @@ def make_side_cover(profile, poles):
         float(profile["body_height"]),
         App.Vector(left, 0, 0),
     )
-    shape = safe_fillet(shape, 0.18)
+    shape = safe_fillet(shape, float(profile["body_edge_radius"]))
     # 侧盖与电气模块采用同一前缘倒角，装配后侧面轮廓连续。
     shape = shape.cut(make_front_slope_cut(profile, left, profile["cover_width"]))
     x_start = overall_width(profile, poles) + 0.05
-    for y_pos, z_pos in ((2.4, 3.0), (7.3, 3.0), (4.7, 7.1), (9.6, 7.1)):
-        pocket = Part.makeCylinder(
-            0.48,
-            0.32,
-            App.Vector(x_start, y_pos, z_pos),
-            App.Vector(-1, 0, 0),
-        )
-        shape = shape.cut(pocket)
+    shape = cut_side_dimples(shape, profile, x_start, -1)
     return shape.removeSplitter()
 
 
 def make_actuator(profile, index):
-    """生成后端铰接的塑料压杆，前端伸出并带明显斜面。"""
+    """生成与主体顶面平齐的压杆；只有侧视楔形尖端略向前伸出。"""
     center = pole_center(profile, index)
     pivot_y = float(profile["actuator_pivot_y"])
     pivot_z = float(profile["actuator_pivot_z"])
     width = float(profile["actuator_width"])
-    tip_y = float(profile["actuator_tip_y"])
-    nose_start_y = float(profile["actuator_nose_start_y"])
+    tip_y = pivot_y - float(profile["actuator_length"])
+    nose_start_y = tip_y + float(profile["actuator_tip_length"])
     top_z = float(profile["actuator_top_z"])
     # 厚度由 profile 统一控制，底面由上表面减厚度得到。
     main_bottom_z = top_z - float(profile["actuator_thickness"])
 
-    # 先建立薄长条毛坯，再按参考图切掉前端绿色区域：长条底面
-    # 通过一条斜线直接收敛到上方尖点，不保留前端竖直面。
+    # 厚主体留在顶部通道内，底面从 nose_start_y 向前上收至顶面尖端。
     x_start = center - width / 2.0
     side_wire = Part.makePolygon(
         [
@@ -234,16 +298,24 @@ def make_actuator(profile, index):
 
     # 圆柱表示后端铰轴，便于装配树和侧视图识别旋转中心。
     axle = Part.makeCylinder(
-        0.58,
+        float(profile["actuator_axle_radius"]),
         width,
-        App.Vector(center - width / 2.0, pivot_y, pivot_z + 0.50),
+        App.Vector(
+            center - width / 2.0,
+            pivot_y + float(profile["actuator_axle_y_offset"]),
+            pivot_z + float(profile["actuator_axle_z_offset"]),
+        ),
         App.Vector(1, 0, 0),
     )
     actuator = actuator.fuse(axle).removeSplitter()
     angle = float(profile.get("actuator_angle", 0.0))
     if angle:
         actuator.rotate(
-            App.Vector(center, pivot_y, pivot_z + 0.50),
+            App.Vector(
+                center,
+                pivot_y + float(profile["actuator_axle_y_offset"]),
+                pivot_z + float(profile["actuator_axle_z_offset"]),
+            ),
             App.Vector(1, 0, 0),
             angle,
         )
@@ -439,6 +511,7 @@ def generate_one(
             Part.export(export_objects, step_path)
     else:
         Part.export(export_objects, step_path)
+    normalize_step_file(step_path)
     doc.save()
     App.closeDocument(doc.Name)
     return {

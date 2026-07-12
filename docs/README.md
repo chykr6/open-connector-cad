@@ -14,4 +14,4 @@
 - [DA803 3P 历史实施计划](plans/DA803-3P-implementation.md)
 - [通用生成器实施计划](plans/connector-generator-implementation.md)
 
-图纸和轮廓参考不放在根目录，统一归档到 `DA_CONNECTOR/products/<product>/references/`。
+规格书和产品渲染图不放在根目录，统一按型号归档到 `DA_CONNECTOR/products/<product>/references/<variant>/`。

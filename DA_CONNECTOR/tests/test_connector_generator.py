@@ -105,6 +105,12 @@ class GeneratorIntegrationTests(unittest.TestCase):
             )
             self.assertTrue(os.path.isfile(result["fcstd"]))
             self.assertTrue(os.path.isfile(result["step"]))
+            with open(result["step"], "r", encoding="utf-8") as stream:
+                step_lines = stream.read().splitlines()
+            self.assertFalse(
+                any(line.endswith((" ", "\t")) for line in step_lines),
+                "generated STEP must not contain trailing whitespace",
+            )
             self.assertEqual(
                 os.path.basename(result["fcstd"]),
                 "DA803-350-2P-black-blue.FCStd",
@@ -133,41 +139,148 @@ class GeneratorIntegrationTests(unittest.TestCase):
                 9,
             )
 
-    def test_actuator_front_tab_protrudes_and_has_clear_side_slope(self):
+    def test_actuator_is_flush_with_housing_and_only_pointed_tip_protrudes(self):
         profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
         actuator = generator.make_actuator(profile, 0)
-        # 绿色区域切除后，尖端略缩在主体最前缘内，不再向外伸出。
-        self.assertGreater(actuator.BoundBox.YMin, 0.05)
-        self.assertLess(actuator.BoundBox.YMin, 0.25)
 
-        sloped_edges = []
-        for edge in actuator.Edges:
-            if not isinstance(edge.Curve, Part.Line) or len(edge.Vertexes) != 2:
-                continue
-            start = edge.Vertexes[0].Point
-            end = edge.Vertexes[1].Point
-            dy = abs(end.y - start.y)
-            dz = abs(end.z - start.z)
-            if dy > 0.8 and dz > 0.4:
-                sloped_edges.append(edge)
-        self.assertTrue(sloped_edges, "actuator must contain a visible straight sloped edge")
+        # 压杆上表面与主体顶面平齐，铰轴也不得向上凸出。
+        self.assertAlmostEqual(
+            actuator.BoundBox.ZMax, profile["body_height"], delta=0.02
+        )
+
+        # 只有楔形尖端越过主体正面约 0.35 mm，厚主体仍留在通道内。
+        self.assertGreater(actuator.BoundBox.YMin, -0.45)
+        self.assertLess(actuator.BoundBox.YMin, -0.25)
+        self.assertLess(actuator.BoundBox.YMin, 0.0)
 
         center_x = profile["pitch"] / 2.0
-        # 尖端下方的绿色区域为空，而红色尖端上部仍属于压杆实体。
+        front_y = actuator.BoundBox.YMin + 0.10
+        # 侧视尖端上部有材料，下部为空，不再是竖直厚鼻头。
+        self.assertTrue(
+            actuator.isInside(
+                App.Vector(center_x, front_y, profile["body_height"] - 0.05),
+                0.01,
+                True,
+            )
+        )
         self.assertFalse(
-            actuator.isInside(App.Vector(center_x, 0.40, 10.40), 0.01, True)
+            actuator.isInside(
+                App.Vector(center_x, front_y, profile["body_height"] - 0.30),
+                0.01,
+                True,
+            )
+        )
+
+        # 沿 Y 向后，斜面逐渐降低，随后恢复完整 2 mm 厚主体。
+        self.assertFalse(
+            actuator.isInside(App.Vector(center_x, 0.60, 9.20), 0.01, True)
         )
         self.assertTrue(
-            actuator.isInside(App.Vector(center_x, 0.40, 10.70), 0.01, True)
+            actuator.isInside(App.Vector(center_x, 0.60, 9.60), 0.01, True)
         )
 
         # 长条主体厚度为 2.0 mm，不再是薄片。
         self.assertTrue(
-            actuator.isInside(App.Vector(center_x, 5.00, 9.00), 0.01, True)
-        )
-        self.assertFalse(
             actuator.isInside(App.Vector(center_x, 5.00, 8.80), 0.01, True)
         )
+        self.assertFalse(
+            actuator.isInside(App.Vector(center_x, 5.00, 8.50), 0.01, True)
+        )
+
+    def test_actuator_length_profile_directly_controls_closed_length(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        shorter = dict(profile)
+        shorter["actuator_length"] = 6.0
+        actuator = generator.make_actuator(shorter, 0)
+        self.assertAlmostEqual(actuator.BoundBox.YLength, 6.0, delta=0.15)
+
+    def test_nonzero_actuator_angle_rotates_around_the_visible_axle(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        opened = dict(profile)
+        opened["actuator_angle"] = 24.0
+        actuator = generator.make_actuator(opened, 0)
+
+        center_x = profile["pitch"] / 2.0
+        width = profile["actuator_width"]
+        axle_y = profile["actuator_pivot_y"] + profile["actuator_axle_y_offset"]
+        axle_z = profile["actuator_pivot_z"] + profile["actuator_axle_z_offset"]
+        axle = Part.makeCylinder(
+            profile["actuator_axle_radius"],
+            width,
+            App.Vector(center_x - width / 2.0, axle_y, axle_z),
+            App.Vector(1, 0, 0),
+        )
+        self.assertAlmostEqual(
+            actuator.common(axle).Volume,
+            axle.Volume,
+            delta=axle.Volume * 0.01,
+        )
+
+    def test_wire_opening_has_a_wide_rounded_cavity_and_narrow_top_arch(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 0)
+        center_x = profile["pitch"] / 2.0
+
+        # 下部腔体应接近主体底边，并比旧版圆孔更宽。
+        self.assertFalse(housing.isInside(App.Vector(center_x, 0.20, 1.20), 0.01, True))
+        self.assertFalse(
+            housing.isInside(App.Vector(center_x - 1.05, 0.20, 3.20), 0.01, True)
+        )
+
+        # 顶部为较窄的圆拱：中心切空，而相同高度的两侧仍保留外壳材料。
+        self.assertFalse(housing.isInside(App.Vector(center_x, 0.20, 7.45), 0.01, True))
+        self.assertTrue(
+            housing.isInside(App.Vector(center_x - 1.15, 0.20, 7.45), 0.01, True)
+        )
+
+    def test_wire_opening_has_a_shallow_wider_entry_bevel(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 0)
+        center_x = profile["pitch"] / 2.0
+
+        # 外缘只在正面浅切放大，进入腔体后应恢复到较小的正式轮廓。
+        bevel_point = App.Vector(center_x - 1.32, 0.12, 3.20)
+        inner_point = App.Vector(center_x - 1.32, 0.80, 3.20)
+        self.assertFalse(housing.isInside(bevel_point, 0.01, True))
+        self.assertTrue(housing.isInside(inner_point, 0.01, True))
+
+    def test_top_channel_has_a_sloped_support_below_the_actuator_nose(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 0)
+        center_x = profile["pitch"] / 2.0
+
+        # 尖端伸出区域由主体前斜面让空；厚主体进入通道后与槽底保持间隙。
+        self.assertFalse(housing.isInside(App.Vector(center_x, 0.15, 9.60), 0.01, True))
+        self.assertTrue(housing.isInside(App.Vector(center_x, 1.50, 8.30), 0.01, True))
+        self.assertFalse(housing.isInside(App.Vector(center_x, 1.50, 8.60), 0.01, True))
+
+    def test_top_channel_support_height_is_profile_driven(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        raised_support = dict(profile)
+        raised_support["top_channel_floor_z"] = 9.0
+        housing = generator.make_housing(raised_support, 3, 0)
+        center_x = profile["pitch"] / 2.0
+        self.assertTrue(housing.isInside(App.Vector(center_x, 4.00, 8.60), 0.01, True))
+
+    def test_exposed_side_has_six_shallow_molded_dimples(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 0)
+        expected_centers = (
+            (1.65, 8.15),
+            (4.65, 7.20),
+            (10.65, 8.15),
+            (1.65, 1.45),
+            (6.25, 1.45),
+            (10.65, 3.10),
+        )
+        for y_pos, z_pos in expected_centers:
+            with self.subTest(y=y_pos, z=z_pos):
+                self.assertFalse(
+                    housing.isInside(App.Vector(0.10, y_pos, z_pos), 0.01, True)
+                )
+                self.assertTrue(
+                    housing.isInside(App.Vector(0.45, y_pos, z_pos), 0.01, True)
+                )
 
     def test_housing_has_front_finger_slope_and_closed_rear_wall(self):
         profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
@@ -189,6 +302,19 @@ class GeneratorIntegrationTests(unittest.TestCase):
         )
         self.assertTrue(
             cover.isInside(App.Vector(cover_center_x, 2.5, 9.8), 0.01, True)
+        )
+
+    def test_housing_and_side_cover_use_visible_outer_edge_rounding(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 1)
+        cover = generator.make_side_cover(profile, 3)
+
+        # 0.30 mm 级圆角应切掉距三向外角各 0.10 mm 的尖角材料。
+        self.assertFalse(
+            housing.isInside(App.Vector(3.60, 12.40, 0.10), 0.005, True)
+        )
+        self.assertFalse(
+            cover.isInside(App.Vector(11.90, 12.40, 0.10), 0.005, True)
         )
 
     def test_terminal_pin_centers_match_recommended_pcb_layout(self):

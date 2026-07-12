@@ -20,7 +20,7 @@ DA_CONNECTOR/
    └─ DA803/
       ├─ README.md                产品说明
       ├─ profiles/                不同间距的真实尺寸配置
-      ├─ references/              图纸和最终轮廓参考
+      ├─ references/              按型号归档的规格书和产品渲染图
       └─ generated/               FCStd 与 STEP 输出
 docs/                             设计说明和实施记录
 ```

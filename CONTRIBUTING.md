@@ -15,7 +15,7 @@
 以 DA803-500 为例：
 
 1. 创建 `DA_CONNECTOR/products/DA803/profiles/DA803-500.json`；
-2. 将尺寸图放入 `DA_CONNECTOR/products/DA803/references/`；
+2. 将规格书和渲染图放入 `DA_CONNECTOR/products/DA803/references/DA803-500/`；
 3. 记录图纸未标尺寸的工程假设；
 4. 使用通用命令生成至少一个代表性极数；
 5. 使用 `verify_connector.ps1` 验证 FCStd 和 STEP；
@@ -53,4 +53,3 @@ feat(cad): add DA803-500 profile
 fix(cad): align DA803 pin layout with footprint
 docs: clarify FreeCAD setup
 ```
-

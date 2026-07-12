@@ -19,7 +19,7 @@
 
 - `DA_CONNECTOR/tools/`：通用生成、导出和验证工具。
 - `DA_CONNECTOR/tests/`：通用参数与 FreeCAD 几何测试。
-- `DA_CONNECTOR/products/<series>/`：对应产品的 profile、参考资料、产品说明和生成模型。
+- `DA_CONNECTOR/products/<series>/`：对应产品的 profile、产品说明、生成模型，以及按具体型号分类的规格书和渲染图。
 - `docs/design/`：确认过的模型设计说明和尺寸假设。
 - `docs/plans/`：实施计划和建模步骤记录。
 - `.agents/skills/`：项目本地技能；依赖必须安装在仓库内，不得全局安装。
