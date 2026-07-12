@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "freecad-scripts": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/freecad-scripts/SKILL.md",
+      "computedHash": "c87789be2fa81d2f30cef22a3f2fe58034871c491def7086dc62a8df5b4f01e1"
+    }
+  }
+}

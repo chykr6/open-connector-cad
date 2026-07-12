@@ -1,0 +1,16 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# FreeCAD automatic backup and recovery files
+*.FCBak
+*.fcstd1
+*.FCStd1
+*.tmp
+*.bak
+
+# Editor and operating-system clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
