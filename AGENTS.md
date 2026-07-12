@@ -17,9 +17,9 @@
 
 ## 目录约定
 
-- `DA_CONNECTOR/`：DA 系列端子模型、生成脚本、验证脚本和对应导出文件。
-- `references/`：尺寸图、产品照片及其他建模参考资料。
-- `exports/`：不属于具体零件工程目录的独立导出件和历史交换文件。
+- `DA_CONNECTOR/tools/`：通用生成、导出和验证工具。
+- `DA_CONNECTOR/tests/`：通用参数与 FreeCAD 几何测试。
+- `DA_CONNECTOR/products/<series>/`：对应产品的 profile、参考资料、产品说明和生成模型。
 - `docs/design/`：确认过的模型设计说明和尺寸假设。
 - `docs/plans/`：实施计划和建模步骤记录。
 - `.agents/skills/`：项目本地技能；依赖必须安装在仓库内，不得全局安装。
@@ -39,9 +39,8 @@
 通用端子模型的标准验证命令：
 
 ```powershell
-& 'D:\destool\FreeCAD\bin\python.exe' `
-  'E:\.proj\3D\DA_CONNECTOR\connector_verify.py' `
-  'E:\.proj\3D\DA_CONNECTOR\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
+& '.\DA_CONNECTOR\tools\verify_connector.ps1' `
+  -Model '.\DA_CONNECTOR\products\DA803\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
 ```
 
 只有在命令退出码为 0，并输出 `VERIFY_OK` 后，才能声称模型通过验证。
@@ -51,3 +50,4 @@
 - 保留用户已有模型和不相关修改，不得擅自覆盖或删除。
 - FreeCAD 自动生成的 `.FCBak` 和 Python `__pycache__` 不进入版本库。
 - 移动或重命名文件时同步更新 README、设计文档和脚本中的路径引用。
+- 调试截图和旧实现不长期保留；确认无用后删除，历史版本通过 Git 恢复。

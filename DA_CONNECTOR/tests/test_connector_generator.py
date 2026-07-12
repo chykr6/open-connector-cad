@@ -6,11 +6,13 @@ import tempfile
 import unittest
 
 import FreeCAD as App
+import Part
 
 
 CONNECTOR_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if CONNECTOR_DIR not in sys.path:
-    sys.path.insert(0, CONNECTOR_DIR)
+TOOLS_DIR = os.path.join(CONNECTOR_DIR, "tools")
+if TOOLS_DIR not in sys.path:
+    sys.path.insert(0, TOOLS_DIR)
 
 import connector_generator as generator
 
@@ -113,6 +115,9 @@ class GeneratorIntegrationTests(unittest.TestCase):
             self.assertEqual(params.Poles, 2)
             self.assertEqual(params.BodyColor, "#202020")
             self.assertEqual(list(params.ActuatorColors), ["#202020", "#1565C0"])
+            self.assertAlmostEqual(float(params.PinFirstX), 2.25, places=6)
+            self.assertAlmostEqual(float(params.PinFrontY), 4.60, places=6)
+            self.assertAlmostEqual(float(params.PinRowPitch), 5.00, places=6)
             self.assertIsNotNone(doc.getObject("SideCover"))
             self.assertIsNone(doc.getObject("Housing_P3"))
             self.assertEqual(doc.getObject("Actuator_P1").ConfiguredColor, "#202020")
@@ -127,6 +132,75 @@ class GeneratorIntegrationTests(unittest.TestCase):
                 sum(len(doc.getObject(name).Shape.Solids) for name in expected_names),
                 9,
             )
+
+    def test_actuator_front_tab_protrudes_and_has_clear_side_slope(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        actuator = generator.make_actuator(profile, 0)
+        # 绿色区域切除后，尖端略缩在主体最前缘内，不再向外伸出。
+        self.assertGreater(actuator.BoundBox.YMin, 0.05)
+        self.assertLess(actuator.BoundBox.YMin, 0.25)
+
+        sloped_edges = []
+        for edge in actuator.Edges:
+            if not isinstance(edge.Curve, Part.Line) or len(edge.Vertexes) != 2:
+                continue
+            start = edge.Vertexes[0].Point
+            end = edge.Vertexes[1].Point
+            dy = abs(end.y - start.y)
+            dz = abs(end.z - start.z)
+            if dy > 0.8 and dz > 0.4:
+                sloped_edges.append(edge)
+        self.assertTrue(sloped_edges, "actuator must contain a visible straight sloped edge")
+
+        center_x = profile["pitch"] / 2.0
+        # 尖端下方的绿色区域为空，而红色尖端上部仍属于压杆实体。
+        self.assertFalse(
+            actuator.isInside(App.Vector(center_x, 0.40, 10.40), 0.01, True)
+        )
+        self.assertTrue(
+            actuator.isInside(App.Vector(center_x, 0.40, 10.70), 0.01, True)
+        )
+
+        # 长条主体厚度为 2.0 mm，不再是薄片。
+        self.assertTrue(
+            actuator.isInside(App.Vector(center_x, 5.00, 9.00), 0.01, True)
+        )
+        self.assertFalse(
+            actuator.isInside(App.Vector(center_x, 5.00, 8.80), 0.01, True)
+        )
+
+    def test_housing_has_front_finger_slope_and_closed_rear_wall(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        housing = generator.make_housing(profile, 3, 0)
+
+        # 前上缘应切出斜坡：靠前高点为空，斜坡后方仍保留实体。
+        self.assertFalse(housing.isInside(App.Vector(0.2, 0.2, 9.8), 0.01, True))
+        self.assertTrue(housing.isInside(App.Vector(0.2, 2.5, 9.8), 0.01, True))
+
+        # 背面不再开方形凹孔。
+        self.assertTrue(housing.isInside(App.Vector(1.75, 11.5, 8.0), 0.01, True))
+
+    def test_side_cover_uses_the_same_front_chamfer_as_housing(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        cover = generator.make_side_cover(profile, 3)
+        cover_center_x = 3 * profile["pitch"] + profile["cover_width"] / 2.0
+        self.assertFalse(
+            cover.isInside(App.Vector(cover_center_x, 0.2, 9.8), 0.01, True)
+        )
+        self.assertTrue(
+            cover.isInside(App.Vector(cover_center_x, 2.5, 9.8), 0.01, True)
+        )
+
+    def test_terminal_pin_centers_match_recommended_pcb_layout(self):
+        profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)
+        pin_1a = generator.make_terminal_pin(profile, 0, 0)
+        pin_1b = generator.make_terminal_pin(profile, 0, 1)
+        pin_2a = generator.make_terminal_pin(profile, 1, 0)
+
+        self.assertAlmostEqual(pin_1a.BoundBox.Center.x, 2.25, places=6)
+        self.assertAlmostEqual(pin_2a.BoundBox.Center.x, 5.75, places=6)
+        self.assertAlmostEqual(pin_1a.BoundBox.Center.y, 4.60, places=6)
+        self.assertAlmostEqual(pin_1b.BoundBox.Center.y, 9.60, places=6)
 
 
 if __name__ == "__main__":

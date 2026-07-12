@@ -1,6 +1,6 @@
 # DA803 3P Implementation Plan
 
-> 历史计划：本计划记录最初的 3P 专用实现。当前入口已被 `connector-generator-implementation.md` 中的通用生成器取代，旧脚本保存在 `DA_CONNECTOR/legacy/`。
+> 历史计划：本计划记录最初的 3P 专用实现。当前入口已被 `connector-generator-implementation.md` 中的通用生成器取代，旧脚本可从 Git 历史恢复。
 
 > **For agentic workers:** Execute inline in the current session; no subagent delegation was requested.
 
@@ -23,7 +23,7 @@
 ### Task 1: Parametric builder and assembly tree
 
 **Files:**
-- Historical: `DA_CONNECTOR/legacy/build_da803_3p.py`
+- Historical: `build_da803_3p.py`（已从当前树删除）
 
 - [ ] Define all drawing dimensions and estimated display-detail dimensions in one `PARAMS` mapping.
 - [ ] Implement housing, lever, and pin solid builders.
@@ -34,7 +34,7 @@
 ### Task 2: Geometry generation and verification
 
 **Files:**
-- Historical: `DA_CONNECTOR/legacy/verify_da803_3p.py`
+- Historical: `verify_da803_3p.py`（已从当前树删除）
 - Generate: `DA_CONNECTOR/DA803-350-3P.FCStd`
 - Generate: `DA_CONNECTOR/DA803-350-3P.step`
 

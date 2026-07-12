@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Command-driven generator for configurable modular terminal blocks."""
+"""模块化端子命令行生成器。
+
+尺寸来自 profiles 目录，极数和颜色来自命令参数。生成器负责创建
+FreeCAD 装配树、保存 FCStd，并导出带颜色的 STEP。
+"""
 
 import argparse
 import json
@@ -11,6 +15,7 @@ import Part
 
 
 COLOR_NAMES = {
+    # 常用颜色名映射到固定的工程配色，命令行也可以直接传 #RRGGBB。
     "black": "#202020",
     "blue": "#1565C0",
     "green": "#2E8B57",
@@ -68,9 +73,11 @@ def parse_poles(specification):
 
 
 def load_profile(series, pitch, connector_dir=None):
-    base_dir = connector_dir or os.path.dirname(os.path.abspath(__file__))
+    """按系列和间距读取独立尺寸配置，禁止跨间距缩放复用。"""
+    # tools 位于 DA_CONNECTOR/tools；产品 profile 位于 products/<series>/profiles。
+    base_dir = connector_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     filename = "%s-%s.json" % (str(series).upper(), pitch_code(pitch))
-    path = os.path.join(base_dir, "profiles", filename)
+    path = os.path.join(base_dir, "products", str(series).upper(), "profiles", filename)
     if not os.path.isfile(path):
         raise ValueError("profile not found: %s" % path)
     with open(path, "r", encoding="utf-8") as stream:
@@ -105,7 +112,26 @@ def safe_fillet(shape, radius):
     return shape
 
 
+def make_front_slope_cut(profile, x_start, width):
+    """创建主体和侧盖共用的前上缘倒角切削体。"""
+    slope_length = float(profile["body_front_slope_length"])
+    slope_low_z = float(profile["body_front_slope_low_z"])
+    body_height = float(profile["body_height"])
+    start_x = float(x_start) - 0.10
+    slope_wire = Part.makePolygon(
+        [
+            App.Vector(start_x, -0.10, slope_low_z),
+            App.Vector(start_x, -0.10, body_height + 0.20),
+            App.Vector(start_x, slope_length, body_height + 0.20),
+            App.Vector(start_x, slope_length, body_height),
+            App.Vector(start_x, -0.10, slope_low_z),
+        ]
+    )
+    return Part.Face(slope_wire).extrude(App.Vector(float(width) + 0.20, 0, 0))
+
+
 def make_housing(profile, poles, index):
+    """生成一个电气模块外壳；每极宽度严格等于 pitch。"""
     pitch = float(profile["pitch"])
     left = int(index) * pitch
     center = pole_center(profile, index)
@@ -117,6 +143,7 @@ def make_housing(profile, poles, index):
     )
     shape = safe_fillet(shape, 0.18)
 
+    # 正面进线口由圆形下部和矩形上部组合成钥匙孔轮廓。
     round_opening = Part.makeCylinder(
         float(profile["wire_opening_radius"]),
         float(profile["wire_opening_depth"]),
@@ -131,19 +158,17 @@ def make_housing(profile, poles, index):
     )
     shape = shape.cut(round_opening.fuse(upper_slot))
 
+    # 顶部通道给压杆留出运动和装配空间。
     top_channel = Part.makeBox(
         2.82,
         8.75,
         2.15,
         App.Vector(center - 1.41, 0.75, 8.62),
     )
-    rear_recess = Part.makeBox(
-        2.45,
-        2.10,
-        2.55,
-        App.Vector(center - 1.225, 10.55, 7.20),
-    )
-    shape = shape.cut(top_channel).cut(rear_recess)
+    shape = shape.cut(top_channel)
+
+    # 主体前上缘切出斜坡，给手指从压杆下方进入的空间。
+    shape = shape.cut(make_front_slope_cut(profile, left, pitch))
 
     if int(index) == 0:
         for y_pos, z_pos in ((2.4, 3.0), (7.3, 3.0), (4.7, 7.1), (9.6, 7.1)):
@@ -158,6 +183,7 @@ def make_housing(profile, poles, index):
 
 
 def make_side_cover(profile, poles):
+    """生成独立侧盖；侧盖没有电气开口。"""
     left = int(poles) * float(profile["pitch"])
     shape = Part.makeBox(
         float(profile["cover_width"]),
@@ -166,6 +192,8 @@ def make_side_cover(profile, poles):
         App.Vector(left, 0, 0),
     )
     shape = safe_fillet(shape, 0.18)
+    # 侧盖与电气模块采用同一前缘倒角，装配后侧面轮廓连续。
+    shape = shape.cut(make_front_slope_cut(profile, left, profile["cover_width"]))
     x_start = overall_width(profile, poles) + 0.05
     for y_pos, z_pos in ((2.4, 3.0), (7.3, 3.0), (4.7, 7.1), (9.6, 7.1)):
         pocket = Part.makeCylinder(
@@ -179,31 +207,39 @@ def make_side_cover(profile, poles):
 
 
 def make_actuator(profile, index):
+    """生成后端铰接的塑料压杆，前端伸出并带明显斜面。"""
     center = pole_center(profile, index)
-    pivot_y = 9.45
-    pivot_z = 9.72
+    pivot_y = float(profile["actuator_pivot_y"])
+    pivot_z = float(profile["actuator_pivot_z"])
     width = float(profile["actuator_width"])
-    length = float(profile["actuator_length"])
-    thickness = float(profile["actuator_thickness"])
-    actuator = Part.makeBox(
-        width,
-        length,
-        thickness,
-        App.Vector(center - width / 2.0, pivot_y - length, pivot_z),
+    tip_y = float(profile["actuator_tip_y"])
+    nose_start_y = float(profile["actuator_nose_start_y"])
+    top_z = float(profile["actuator_top_z"])
+    # 厚度由 profile 统一控制，底面由上表面减厚度得到。
+    main_bottom_z = top_z - float(profile["actuator_thickness"])
+
+    # 先建立薄长条毛坯，再按参考图切掉前端绿色区域：长条底面
+    # 通过一条斜线直接收敛到上方尖点，不保留前端竖直面。
+    x_start = center - width / 2.0
+    side_wire = Part.makePolygon(
+        [
+            App.Vector(x_start, tip_y, top_z),
+            App.Vector(x_start, pivot_y, top_z),
+            App.Vector(x_start, pivot_y, main_bottom_z),
+            App.Vector(x_start, nose_start_y, main_bottom_z),
+            App.Vector(x_start, tip_y, top_z),
+        ]
     )
-    finger_pad = Part.makeBox(
-        width + 0.12,
-        2.15,
-        0.45,
-        App.Vector(center - (width + 0.12) / 2.0, pivot_y - length - 0.15, pivot_z + 0.75),
-    )
+    actuator = Part.Face(side_wire).extrude(App.Vector(width, 0, 0))
+
+    # 圆柱表示后端铰轴，便于装配树和侧视图识别旋转中心。
     axle = Part.makeCylinder(
         0.58,
         width,
         App.Vector(center - width / 2.0, pivot_y, pivot_z + 0.50),
         App.Vector(1, 0, 0),
     )
-    actuator = actuator.fuse(finger_pad).fuse(axle).removeSplitter()
+    actuator = actuator.fuse(axle).removeSplitter()
     angle = float(profile.get("actuator_angle", 0.0))
     if angle:
         actuator.rotate(
@@ -215,7 +251,9 @@ def make_actuator(profile, index):
 
 
 def make_terminal_pin(profile, index, row):
-    center_x = pole_center(profile, index)
+    """生成一根 PCB 焊脚；每极包含前后两根。"""
+    # 焊脚中心按推荐 PCB layout 定位，不等同于塑胶模块几何中心。
+    center_x = float(profile["pin_x_first"]) + int(index) * float(profile["pitch"])
     center_y = float(profile["pin_y_front"]) + int(row) * float(profile["pin_row_pitch"])
     width = float(profile["pin_width"])
     thickness = float(profile["pin_thickness"])
@@ -273,6 +311,14 @@ def add_parameters(doc, assembly, profile, poles, body_color, actuator_colors, p
     obj.BodyHeight = float(profile["body_height"])
     obj.addProperty("App::PropertyLength", "CoverWidth", "Dimensions")
     obj.CoverWidth = float(profile["cover_width"])
+    obj.addProperty("App::PropertyLength", "ActuatorThickness", "Dimensions")
+    obj.ActuatorThickness = float(profile["actuator_thickness"])
+    obj.addProperty("App::PropertyLength", "PinFirstX", "PCB layout")
+    obj.PinFirstX = float(profile["pin_x_first"])
+    obj.addProperty("App::PropertyLength", "PinFrontY", "PCB layout")
+    obj.PinFrontY = float(profile["pin_y_front"])
+    obj.addProperty("App::PropertyLength", "PinRowPitch", "PCB layout")
+    obj.PinRowPitch = float(profile["pin_row_pitch"])
     obj.addProperty("App::PropertyStringList", "ActuatorColors", "Generation")
     obj.ActuatorColors = [normalize_color(color) for color in actuator_colors]
     assembly.addObject(obj)
@@ -294,8 +340,11 @@ def generate_one(
     if len(actuator_colors) != poles:
         raise ValueError("actuator color count must match poles")
 
+    connector_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     base_dir = output_dir or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
+        connector_dir,
+        "products",
+        str(profile["series"]).upper(),
         "generated",
         "%s-%s" % (profile["series"], pitch_code(profile["pitch"])),
     )
@@ -307,6 +356,7 @@ def generate_one(
     doc_name = re.sub(r"[^A-Za-z0-9_]", "_", stem)
     if doc_name in App.listDocuments():
         App.closeDocument(doc_name)
+    # 每个输出文件都是独立装配文档，避免不同极数和配色互相覆盖。
     doc = App.newDocument(doc_name)
     assembly = doc.addObject("App::Part", "ConnectorAssembly")
     assembly.Label = stem + " Assembly"
@@ -322,6 +372,7 @@ def generate_one(
     )
 
     export_objects = []
+    # 按从左到右的顺序创建电气模块、压杆和两根焊脚。
     for index in range(poles):
         pole_no = index + 1
         pole = doc.addObject("App::Part", "Pole_%d" % pole_no)
@@ -378,6 +429,7 @@ def generate_one(
     )
     doc.recompute()
     doc.saveAs(fcstd_path)
+    # GUI 模式优先使用 ImportGui，以便 STEP 保留部件颜色。
     if App.GuiUp:
         try:
             import ImportGui
@@ -427,7 +479,7 @@ def request_to_argv(request):
 
 def main(argv=None):
     args = build_argument_parser().parse_args(argv)
-    connector_dir = os.path.dirname(os.path.abspath(__file__))
+    connector_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     profile = load_profile(args.series, args.pitch, connector_dir)
     defaults = profile["default_colors"]
     body_color = normalize_color(args.body_color or defaults["body"])

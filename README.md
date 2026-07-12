@@ -1,49 +1,53 @@
-# FreeCAD 3D 零件项目
+# Parametric FreeCAD Connector Models
 
-本仓库用于维护参数化 FreeCAD 零件、PCBA 展示模型以及对应的 STEP 交换文件。
+使用 FreeCAD Python API 生成参数化端子模型，并导出可编辑的 FCStd 与带颜色的 STEP 文件。
 
-## 当前模型
+当前已实现：
 
-### DA803 3.5 mm 3P 端子
+- DA803，3.50 mm 间距；
+- 任意极数，例如 1P、2P、3P、4P、8P；
+- 主体、逐极压杆和金属焊脚独立配色；
+- 动态装配树和推荐 PCB 焊脚布局验证；
+- Windows PowerShell 命令入口。
 
-模型位于 [`DA_CONNECTOR/`](DA_CONNECTOR/)，采用以下装配结构：
-
-- 3 个独立的 3.5 mm 电气模块；
-- 1 个独立的 1.5 mm 右侧盖；
-- 3 个后端铰接压杆，默认闭合；
-- 每极 2 根焊脚，共 6 根；
-- 主体默认灰色，压杆默认黑色。
-
-当前实际配色输出：
-
-- [`DA803-350-3P-black-blue-green.FCStd`](DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.FCStd)：黑色主体、黑/蓝/绿压杆的 FreeCAD 模型；
-- [`DA803-350-3P-black-blue-green.step`](DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.step)：保留部件颜色的 STEP；
-- [`connector_generator.py`](DA_CONNECTOR/connector_generator.py)：通用参数化几何生成器；
-- [`generate_connector.ps1`](DA_CONNECTOR/generate_connector.ps1)：推荐的 Windows 命令入口；
-- [`connector_verify.py`](DA_CONNECTOR/connector_verify.py)：任意极数的动态验证程序；
-- [`profiles/DA803-350.json`](DA_CONNECTOR/profiles/DA803-350.json)：DA803 3.5 mm 图纸尺寸 profile。
-
-## 目录结构
+## 仓库结构
 
 ```text
-3D/
-├─ AGENTS.md                 协作规则和 Git 授权边界
-├─ README.md                 项目入口
-├─ DA_CONNECTOR/             DA 系列端子工程
-├─ docs/
-│  ├─ design/                模型设计说明
-│  └─ plans/                 实施计划
-├─ references/               图纸和产品照片
-├─ exports/                  独立或历史导出件
-└─ .agents/skills/           项目本地技能
+DA_CONNECTOR/
+├─ tools/                         通用生成与验证工具
+├─ tests/                         参数和 FreeCAD 几何测试
+└─ products/
+   └─ DA803/
+      ├─ README.md                产品说明
+      ├─ profiles/                不同间距的真实尺寸配置
+      ├─ references/              图纸和最终轮廓参考
+      └─ generated/               FCStd 与 STEP 输出
+docs/                             设计说明和实施记录
 ```
 
-`DA_CONNECTOR/legacy/` 保存通用生成器启用前的 3P 专用脚本和模型快照，仅供对照，不作为当前生成入口。
+通用代码不保存产品尺寸。DA803-350、DA803-500、DA803-750 必须使用各自图纸对应的 profile，禁止整体缩放替代。
 
-## 生成任意极数和配色
+## 环境要求
+
+- FreeCAD 1.0，或兼容的 FreeCAD 0.21；
+- Windows PowerShell 5.1 或 PowerShell 7；
+- 不需要额外安装 Python 包，脚本使用 FreeCAD 自带 Python。
+
+## 快速开始
+
+设置 FreeCAD 路径：
 
 ```powershell
-& '.\DA_CONNECTOR\generate_connector.ps1' `
+$env:FREECAD_EXE = 'C:\Program Files\FreeCAD 1.0\bin\FreeCAD.exe'
+$env:FREECAD_PYTHON = 'C:\Program Files\FreeCAD 1.0\bin\python.exe'
+```
+
+如果 FreeCAD 已加入 `PATH`，可以省略 `FREECAD_EXE`。也可以每次通过 `-FreeCADExe` 显式指定。
+
+生成黑色主体、黑/蓝/绿压杆、银色焊脚的 DA803-350 3P：
+
+```powershell
+& '.\DA_CONNECTOR\tools\generate_connector.ps1' `
   -Series DA803 `
   -Pitch 3.5 `
   -Poles '3' `
@@ -53,10 +57,10 @@
   -Variant black-blue-green
 ```
 
-批量生成 1P、2P、4P、8P，统一使用黑色压杆：
+批量生成多个极数：
 
 ```powershell
-& '.\DA_CONNECTOR\generate_connector.ps1' `
+& '.\DA_CONNECTOR\tools\generate_connector.ps1' `
   -Series DA803 `
   -Pitch 3.5 `
   -Poles '1,2,4,8' `
@@ -65,24 +69,39 @@
   -TerminalPinColor silver
 ```
 
-颜色参数支持英文颜色名或 `#RRGGBB`。压杆颜色只给一个值时应用到全部极；给多个值时必须与极数一致，并按从左到右的顺序应用。
-
-生成后运行验证：
+验证模型：
 
 ```powershell
-& 'D:\destool\FreeCAD\bin\python.exe' `
-  '.\DA_CONNECTOR\connector_verify.py' `
-  '.\DA_CONNECTOR\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
+& '.\DA_CONNECTOR\tools\verify_connector.ps1' `
+  -Model '.\DA_CONNECTOR\products\DA803\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
 ```
 
-## 间距 profile
+运行测试：
 
-DA803-350、DA803-500、DA803-750 使用不同尺寸 profile。当前只有完成图纸确认的 `DA803-350.json`；取得 5.0 mm、7.5 mm 图纸后分别增加 profile，不修改或复制通用 Python 几何入口。
+```powershell
+& $env:FREECAD_PYTHON -m unittest discover -s '.\DA_CONNECTOR\tests' -v
+```
 
-详细设计资料见 [`docs/README.md`](docs/README.md)。
+## 颜色参数
 
-## Git 说明
+颜色接受内置英文名称或 `#RRGGBB`：
 
-`FCStd` 可以被 Git 保存和恢复，但属于压缩二进制文件，不适合逐行比较。参数化 Python 脚本是主要追溯来源，FCStd、STEP 和预览图作为对应版本的模型快照保留。
+- `-BodyColor`：电气模块和侧盖；
+- `-ActuatorColors`：一个颜色应用全部极，或按从左到右提供与极数相同的列表；
+- `-TerminalPinColor`：PCB 金属焊脚。
 
-任何 Git 暂存、提交或推送操作都必须由用户明确提出，具体规则见 [`AGENTS.md`](AGENTS.md)。
+颜色数量与极数不匹配时，生成器会终止并报告错误。
+
+## 添加新间距或产品
+
+请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。产品尺寸配置和参考资料必须放在对应产品目录，通用工具目录不得包含产品专属尺寸。
+
+DA803 的尺寸、坐标系和现有输出见 [DA803 产品说明](DA_CONNECTOR/products/DA803/README.md)。
+
+## Git 与二进制模型
+
+FCStd 是压缩二进制文件，Git 可以保存和恢复版本，但无法提供有意义的逐行 diff。JSON profile 与 Python 生成器是主要可追溯来源，FCStd 和 STEP 作为已验证的发布快照保存。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。

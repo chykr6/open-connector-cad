@@ -32,17 +32,21 @@
 
 使用 FreeCAD Part/OpenCASCADE 直接生成实体：三个电气模块经过插线孔和顶部压杆槽布尔切除，侧盖单独生成；压杆由若干简单实体融合，闭合时由后端铰轴朝前覆盖顶部；焊脚使用矩形柱。所有最终零件均为有效实体。
 
+侧面细节按尺寸图和实装参考处理：压杆为 2.0 mm 厚的长条主体，前端绿色区域从矩形毛坯中切除，使长条底面通过一条直线斜边直接收敛到上方尖点；前端不保留竖直面，也不增加下凸三角鼻部。尖点位于主体最前缘内约 0.10 mm。主体与 1.5 mm 侧盖的前上缘使用相同倒角，装配后侧面轮廓连续。端子背面保持封闭，不建立方形观察孔或凹槽。
+
+推荐 PCB layout 的焊脚中心不能直接使用塑胶模块中心：第一列距外边为 2.25 mm，后续列按 3.5 mm pitch 递增。以模型正面为 Y=0 时，两排焊脚中心为 Y=4.60 mm 和 Y=9.60 mm，对应图纸从背面量取 2.9 mm、排距 5 mm。
+
 主体显示颜色集中为参数，默认中灰色；压杆显示颜色集中为参数，默认近黑色。颜色存入 FCStd 的视图属性，修改脚本参数并重新生成即可统一换色。
 
 建模脚本是参数化模型的权威来源，集中定义极数、节距、外廓和孔位。FCStd 保存可见装配树、颜色、参数记录和最终实体；STEP 导出全部外部零件。
 
 ## 输出
 
-- `DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.FCStd`
-- `DA_CONNECTOR/generated/DA803-350/DA803-350-3P-black-blue-green.step`
-- `DA_CONNECTOR/connector_generator.py`
+- `DA_CONNECTOR/products/DA803/generated/DA803-350/DA803-350-3P-black-blue-green.FCStd`
+- `DA_CONNECTOR/products/DA803/generated/DA803-350/DA803-350-3P-black-blue-green.step`
+- `DA_CONNECTOR/tools/connector_generator.py`
 
-当前模型由通用生成器和 `profiles/DA803-350.json` 共同定义。旧 3P 专用生成脚本已移动到 `DA_CONNECTOR/legacy/`，只用于历史对照。
+当前模型由通用生成器和 `DA_CONNECTOR/products/DA803/profiles/DA803-350.json` 共同定义。旧 3P 专用实现只保留在 Git 历史中。
 
 ## 验收标准
 

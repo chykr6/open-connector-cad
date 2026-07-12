@@ -8,9 +8,10 @@ __pycache__/
 *.FCStd1
 *.tmp
 *.bak
+*.log
+*-user.cfg
 
 # Editor and operating-system clutter
 .DS_Store
 Thumbs.db
 desktop.ini
-
