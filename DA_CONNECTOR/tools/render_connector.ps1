@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $renderer = Join-Path $toolsDir 'connector_render.py'
+. (Join-Path $toolsDir 'freecad_process.ps1')
 
 $candidates = @(
     $FreeCADExe,
@@ -35,10 +36,16 @@ $request = @{
 $env:CONNECTOR_RENDER_REQUEST_JSON = $request | ConvertTo-Json -Compress
 $env:CONNECTOR_AUTOCLOSE = '1'
 try {
-    & $freecad $renderer
-    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-        throw "Connector render failed with exit code $LASTEXITCODE"
+    $startedAt = [DateTime]::UtcNow
+    $exitCode = Invoke-FreeCADProcess -Executable $freecad -Arguments @($renderer)
+    $modelPath = [IO.Path]::GetFullPath($Model)
+    $outputPath = if ($Output) {
+        [IO.Path]::GetFullPath($Output)
     }
+    else {
+        [IO.Path]::ChangeExtension($modelPath, '.png')
+    }
+    Assert-FreeCADArtifacts -ExitCode $exitCode -ExpectedPaths @($outputPath) -StartedAt $startedAt -Operation 'Connector render'
 }
 finally {
     Remove-Item Env:CONNECTOR_RENDER_REQUEST_JSON -ErrorAction SilentlyContinue

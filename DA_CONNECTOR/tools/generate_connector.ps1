@@ -21,6 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $generator = Join-Path $toolsDir 'connector_generator.py'
+. (Join-Path $toolsDir 'freecad_process.ps1')
 
 # 优先使用显式参数，其次读取环境变量、PATH 和常见安装目录。
 $candidates = @(
@@ -52,12 +53,23 @@ $request = @{
 $env:CONNECTOR_REQUEST_JSON = $request | ConvertTo-Json -Compress
 $env:CONNECTOR_AUTOCLOSE = '1'
 try {
-    & $freecad $generator
-    # FreeCAD GUI 在部分 Windows 会话中正常关闭时不返回数值退出码；
-    # 只有明确返回非零整数时才判定为失败，产物完整性由验证器负责确认。
-    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-        throw "Connector generation failed with exit code $LASTEXITCODE"
+    $startedAt = [DateTime]::UtcNow
+    $exitCode = Invoke-FreeCADProcess -Executable $freecad -Arguments @($generator)
+
+    $pitchCode = ([int][math]::Round($Pitch * 100.0)).ToString('D3')
+    $baseDir = if ($OutputDir) {
+        [IO.Path]::GetFullPath($OutputDir)
     }
+    else {
+        Join-Path (Split-Path -Parent $toolsDir) "products\$($Series.ToUpperInvariant())\generated\$($Series.ToUpperInvariant())-$pitchCode"
+    }
+    $expected = foreach ($poleText in $Poles.Split(',')) {
+        $poleCount = [int]$poleText.Trim()
+        $stem = Get-ConnectorOutputStem -Series $Series -Pitch $Pitch -Poles $poleCount -Variant $Variant -ActuatorColors $ActuatorColors
+        Join-Path $baseDir "$stem.FCStd"
+        Join-Path $baseDir "$stem.step"
+    }
+    Assert-FreeCADArtifacts -ExitCode $exitCode -ExpectedPaths $expected -StartedAt $startedAt -Operation 'Connector generation'
 }
 finally {
     Remove-Item Env:CONNECTOR_REQUEST_JSON -ErrorAction SilentlyContinue
