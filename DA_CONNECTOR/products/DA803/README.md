@@ -87,6 +87,7 @@ Y = 4.60 mm 和 9.60 mm
 - `generated/DA803-350/DA803-350-4P-black-blue-green-red.FCStd/.step/.png`
 - `generated/DA803-350/DA803-350-4P-all-black.FCStd/.step`
 - `generated/DA803-350/DA803-350-8P-all-black.FCStd/.step`
+- `generated/DA803-350/DA803-350-8P-black-blue-black-blue-black-blue-black-blue.FCStd/.step`
 - `generated/DA803-350/DA803-350-12P-all-black.FCStd/.step`
 - `generated/DA803-500/DA803-500-2P-black-red.FCStd/.step/.png`
 
@@ -122,4 +123,20 @@ Y = 4.60 mm 和 9.60 mm
   -ActuatorColors 'black,red' `
   -TerminalPinColor silver `
   -Variant black-red
+```
+
+生成 DA803-350 8P 黑/蓝交替：
+
+```powershell
+& '.\DA_CONNECTOR\tools\generate_connector.ps1' `
+  -Series DA803 `
+  -Pitch 3.5 `
+  -Poles '8' `
+  -BodyColor black `
+  -CoverColor black `
+  -HousingColors black `
+  -ActuatorColors 'black,blue,black,blue,black,blue,black,blue' `
+  -TerminalPinColor silver `
+  -Variant black-blue-black-blue-black-blue-black-blue `
+  -FreeCADExe 'D:\destool\FreeCAD\bin\FreeCAD.exe'
 ```
