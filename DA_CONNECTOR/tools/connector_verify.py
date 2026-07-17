@@ -54,8 +54,15 @@ def verify_model(fcstd_path, step_path=None, require_step_colors=True):
 
     poles = int(params.Poles)
     pitch = float(params.Pitch)
+    housing_width = float(params.HousingWidth) if hasattr(params, "HousingWidth") else pitch
+    spacer_width = (
+        float(params.InterPoleSpacerWidth)
+        if hasattr(params, "InterPoleSpacerWidth")
+        else 0.0
+    )
     cover_width = float(params.CoverWidth)
-    expected_parts = poles * 4 + 1
+    expected_spacers = poles - 1 if spacer_width > 0 else 0
+    expected_parts = poles * 4 + expected_spacers + 1
     cover_side_numbering = (
         hasattr(params, "PinNumberingDirection")
         and params.PinNumberingDirection == "CoverSideHighXToLowX"
@@ -68,8 +75,14 @@ def verify_model(fcstd_path, step_path=None, require_step_colors=True):
         for index in range(1, poles + 1)
         for suffix in ("A", "B")
     ]
+    spacers = []
+    if expected_spacers:
+        for geometry_index in range(0, poles - 1):
+            low_pin = poles - geometry_index
+            high_pin = low_pin - 1
+            spacers.append(doc.getObject("Spacer_P%d_P%d" % (high_pin, low_pin)))
     cover = doc.getObject("SideCover")
-    parts = housings + actuators + pins + [cover]
+    parts = housings + spacers + actuators + pins + [cover]
     if any(obj is None for obj in parts):
         raise AssertionError("assembly is missing generated component objects")
     if len(parts) != expected_parts:
@@ -87,16 +100,32 @@ def verify_model(fcstd_path, step_path=None, require_step_colors=True):
         raise AssertionError("housing color metadata count mismatch")
     for index, housing in enumerate(housings):
         geometry_index = poles - index - 1 if cover_side_numbering else index
-        assert_close(housing.Shape.BoundBox.XLength, pitch, "housing width")
+        assert_close(housing.Shape.BoundBox.XLength, housing_width, "housing width")
         assert_close(
             housing.Shape.BoundBox.Center.x,
-            pitch * (geometry_index + 0.5),
+            pitch * geometry_index + housing_width / 2.0,
             "pole center",
         )
         if housing.ConfiguredColor != housing_colors[index]:
             raise AssertionError("housing color mismatch: %s" % housing.Name)
+    for index, spacer in enumerate(spacers):
+        assert_close(spacer.Shape.BoundBox.XLength, spacer_width, "spacer width")
+        assert_close(
+            spacer.Shape.BoundBox.XMin,
+            index * pitch + housing_width,
+            "spacer start",
+        )
+        expected_spacer_color = (
+            params.SpacerColor if hasattr(params, "SpacerColor") else params.CoverColor
+        )
+        if spacer.ConfiguredColor != expected_spacer_color:
+            raise AssertionError("spacer color mismatch: %s" % spacer.Name)
     assert_close(cover.Shape.BoundBox.XLength, cover_width, "cover width")
-    assert_close(cover.Shape.BoundBox.XMin, poles * pitch, "cover start")
+    assert_close(
+        cover.Shape.BoundBox.XMin,
+        (poles - 1) * pitch + housing_width,
+        "cover start",
+    )
     expected_cover_color = (
         params.CoverColor if hasattr(params, "CoverColor") else params.BodyColor
     )
@@ -127,12 +156,21 @@ def verify_model(fcstd_path, step_path=None, require_step_colors=True):
             "rear pin Y",
         )
 
-    body = Part.makeCompound([obj.Shape for obj in housings + [cover]])
-    assert_close(body.BoundBox.XLength, poles * pitch + cover_width, "overall width")
+    body = Part.makeCompound([obj.Shape for obj in housings + spacers + [cover]])
+    expected_width = (
+        float(params.OverallWidth)
+        if hasattr(params, "OverallWidth")
+        else (poles - 1) * pitch + housing_width + cover_width
+    )
+    assert_close(body.BoundBox.XLength, expected_width, "overall width")
     assert_close(body.BoundBox.YLength, float(params.Depth), "body depth")
     assert_close(body.BoundBox.ZLength, float(params.BodyHeight), "body height")
     configured_colors = set(housing_colors + actuator_colors)
     configured_colors.add(expected_cover_color)
+    if expected_spacers:
+        configured_colors.add(
+            params.SpacerColor if hasattr(params, "SpacerColor") else expected_cover_color
+        )
     configured_colors.add(params.TerminalPinColor)
     App.closeDocument(doc.Name)
 
@@ -169,7 +207,7 @@ def verify_model(fcstd_path, step_path=None, require_step_colors=True):
     result = {
         "poles": poles,
         "parts": expected_parts,
-        "width": poles * pitch + cover_width,
+        "width": expected_width,
         "fcstd": fcstd_path,
         "step": step_path,
     }

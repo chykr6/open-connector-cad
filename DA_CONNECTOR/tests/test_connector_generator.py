@@ -119,6 +119,19 @@ class GeneratorParameterTests(unittest.TestCase):
         self.assertEqual(profile["pcb_hole"], 1.3)
         self.assertAlmostEqual(generator.overall_width(profile, 2), 11.5)
 
+    def test_da803_750_profile_uses_500_body_plus_spacers(self):
+        profile = generator.load_profile("DA803", 7.5, CONNECTOR_DIR)
+        self.assertEqual(profile["pitch"], 7.5)
+        self.assertEqual(profile["housing_width"], 5.0)
+        self.assertEqual(profile["inter_pole_spacer_width"], 2.5)
+        self.assertEqual(profile["cover_width"], 1.5)
+        self.assertEqual(profile["pin_x_first"], 3.0)
+        self.assertEqual(profile["pin_row_pitch"], 5.0)
+        self.assertEqual(profile["default_colors"]["spacer"], "#D9D9D9")
+        self.assertAlmostEqual(generator.housing_width(profile), 5.0)
+        self.assertAlmostEqual(generator.spacer_width(profile), 2.5)
+        self.assertAlmostEqual(generator.overall_width(profile, 8), 59.0)
+
     def test_step_color_parser_reads_rgb_entities_across_line_breaks(self):
         colors = verifier.parse_step_colors(
             "#1=COLOUR_RGB('',0.125490201081,0.125490201081,\n"
@@ -437,6 +450,40 @@ class GeneratorIntegrationTests(unittest.TestCase):
             self.assertEqual(doc.getObject("Housing_P2").ConfiguredColor, "#D9291C")
             self.assertEqual(doc.getObject("Actuator_P1").ConfiguredColor, "#202020")
             self.assertEqual(doc.getObject("Actuator_P2").ConfiguredColor, "#D9291C")
+
+    def test_da803_750_generates_independent_inter_pole_spacers(self):
+        profile = generator.load_profile("DA803", 7.5, CONNECTOR_DIR)
+        with tempfile.TemporaryDirectory() as output_dir:
+            result = generator.generate_one(
+                profile=profile,
+                poles=2,
+                body_color="#202020",
+                actuator_colors=["#D9D9D9", "#D9D9D9"],
+                terminal_pin_color="#C0C0C0",
+                variant="black-light-gray",
+                output_dir=output_dir,
+                cover_color="#202020",
+                spacer_color="#D9D9D9",
+                housing_colors=["#202020", "#202020"],
+            )
+            self.assertEqual(result["parts"], 10)
+            doc = App.openDocument(result["fcstd"])
+            params = doc.getObject("Parameters")
+            self.assertAlmostEqual(float(params.Pitch), 7.5)
+            self.assertAlmostEqual(float(params.HousingWidth), 5.0)
+            self.assertAlmostEqual(float(params.InterPoleSpacerWidth), 2.5)
+            self.assertAlmostEqual(float(params.OverallWidth), 14.0)
+
+            spacer = doc.getObject("Spacer_P1_P2")
+            self.assertIsNotNone(spacer)
+            self.assertEqual(spacer.ComponentKind, "InterPoleSpacer")
+            self.assertEqual(spacer.ConfiguredColor, "#D9D9D9")
+            self.assertEqual(doc.getObject("SideCover").ConfiguredColor, "#202020")
+            self.assertAlmostEqual(spacer.Shape.BoundBox.XMin, 5.0, places=6)
+            self.assertAlmostEqual(spacer.Shape.BoundBox.XLength, 2.5, places=6)
+            self.assertAlmostEqual(doc.getObject("SideCover").Shape.BoundBox.XMin, 12.5)
+            self.assertAlmostEqual(doc.getObject("Pin_P1_A").Shape.BoundBox.Center.x, 10.5)
+            self.assertAlmostEqual(doc.getObject("Pin_P2_A").Shape.BoundBox.Center.x, 3.0)
 
     def test_dynamic_4p_8p_12p_part_counts_follow_generic_formula(self):
         profile = generator.load_profile("DA803", 3.5, CONNECTOR_DIR)

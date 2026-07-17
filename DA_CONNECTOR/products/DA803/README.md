@@ -1,20 +1,21 @@
 # DA803 Modular Connector
 
-DA803 是可组合的直插式弹簧端子。本目录包含 3.50、5.00、7.50 mm 三种间距的规格书和产品渲染图，以及 3.50 mm、5.00 mm 型号的独立尺寸 profile 和已验证模型。
+DA803 是可组合的直插式弹簧端子。本目录包含 3.50、5.00、7.50 mm 三种间距的规格书和产品渲染图，以及独立尺寸 profile 和已验证模型。
 
 ## 当前支持
 
-- Profile：`DA803-350`、`DA803-500`
+- Profile：`DA803-350`、`DA803-500`、`DA803-750`
 - 极数：由命令参数决定
-- 总宽：`N × 3.5 + 1.5 mm`
+- DA803-350/500 总宽：`N × pitch + 1.5 mm`
+- DA803-750 总宽：`7.50 × N - 1.00 mm`
 - 本体深度：`12.5 mm`
 - 本体高度：`10.6 mm`
 - 侧盖宽度：`1.5 mm`
 - 每极两根 PCB 焊脚
 
-7.50 mm 型号已有参考资料但尚未建立尺寸 profile；后续需要增加 `DA803-750.json`，不得按比例缩放其他间距模型。
-
 DA803-500 图纸尺寸：间距 5.00 mm，总宽 `N × 5.00 + 1.50 mm`，本体深度 12.50 mm，本体高度 10.60 mm，侧盖宽度 1.50 mm，焊脚长 3.00 mm、截面 0.80 × 0.50 mm，推荐孔径 Ø1.30 mm。
+
+DA803-750 图纸尺寸：间距 7.50 mm，总宽 `7.50 × N - 1.00 mm`，本体深度 12.50 mm，本体高度 10.60 mm，侧盖宽度 1.50 mm，焊脚长 3.00 mm、截面 0.80 × 0.50 mm，推荐孔径 Ø1.30 mm。建模时按 `5.00 mm` 功能主体、`2.50 mm` 极间绝缘垫片和 `1.50 mm` 侧盖组合，得到 `5.00 × N + 2.50 × (N - 1) + 1.50 = 7.50 × N - 1.00`。
 
 ## 参考资料
 
@@ -28,13 +29,13 @@ DA803-500 图纸尺寸：间距 5.00 mm，总宽 `N × 5.00 + 1.50 mm`，本体�
 
 ## 装配结构
 
-每个电气极包含：
+DA803-350/500 每个电气极包含：
 
 - 一个 3.5 mm 塑胶模块；
 - 一个后端铰接压杆；
 - 两根金属焊脚。
 
-整组端子另外包含一个 1.5 mm 独立侧盖。
+DA803-750 每个电气极包含一个 5.0 mm 功能主体、一个后端铰接压杆和两根金属焊脚；相邻极之间增加 2.5 mm 灰色绝缘垫片并作为独立实体保存。整组端子另外包含一个 1.5 mm 独立侧盖。
 
 ## 坐标系与 PCB layout
 
@@ -61,6 +62,15 @@ Y = 4.60 mm 和 9.60 mm
 ```
 
 图纸中的 2.90 mm 是后排孔中心到后边缘的距离，因此模型坐标为 `12.50 - 2.90 = 9.60 mm`；前排再减去 5.00 mm 排距，得到 4.60 mm。推荐孔径为 1.30 mm。上述尺寸来自 DA803-500 规格书；未标注的开口圆弧、压杆宽度、顶部通道和浅凹点参数为结合对应渲染图确定的独立外观假设，并记录在 `profiles/DA803-500.json` 中。
+
+DA803-750 推荐焊脚几何列中心：
+
+```text
+X = 3.00 + pole_index × 7.50 mm
+Y = 4.60 mm 和 9.60 mm
+```
+
+DA803-750 的 5.0 mm 功能主体沿用 DA803-500 的开口、压杆和焊脚局部结构；2.5 mm 极间垫片只用于拉开绝缘距离，不移动焊脚在功能主体内的局部位置。
 
 ## 压杆轮廓
 
@@ -90,6 +100,8 @@ Y = 4.60 mm 和 9.60 mm
 - `generated/DA803-350/DA803-350-8P-black-blue-black-blue-black-blue-black-blue.FCStd/.step`
 - `generated/DA803-350/DA803-350-12P-all-black.FCStd/.step`
 - `generated/DA803-500/DA803-500-2P-black-red.FCStd/.step/.png`
+- `generated/DA803-750/DA803-750-8P-black-gray-gray.FCStd/.step`
+- `generated/DA803-750/DA803-750-8P-black-gray-gray-gray-gray-gray-black-black-black-red.FCStd/.step`
 
 所有新模型均使用银色金属焊脚；文件名中的多色顺序按 Pin 1（靠近侧盖）→ Pin N（远离侧盖）。
 
@@ -138,5 +150,39 @@ Y = 4.60 mm 和 9.60 mm
   -ActuatorColors 'black,blue,black,blue,black,blue,black,blue' `
   -TerminalPinColor silver `
   -Variant black-blue-black-blue-black-blue-black-blue `
+  -FreeCADExe 'D:\destool\FreeCAD\bin\FreeCAD.exe'
+```
+
+生成 DA803-750 黑色主体、偏白灰间隔、黑色侧盖、偏白灰压杆 8P：
+
+```powershell
+& '.\DA_CONNECTOR\tools\generate_connector.ps1' `
+  -Series DA803 `
+  -Pitch 7.5 `
+  -Poles '8' `
+  -BodyColor black `
+  -CoverColor black `
+  -SpacerColor '#D9D9D9' `
+  -HousingColors black `
+  -ActuatorColors '#D9D9D9' `
+  -TerminalPinColor silver `
+  -Variant black-gray-gray `
+  -FreeCADExe 'D:\destool\FreeCAD\bin\FreeCAD.exe'
+```
+
+生成 DA803-750 黑色主体、偏白灰间隔、黑色侧盖、Pin 1 → Pin 8 压杆为偏白灰/偏白灰/偏白灰/偏白灰/黑/黑/黑/红的 8P：
+
+```powershell
+& '.\DA_CONNECTOR\tools\generate_connector.ps1' `
+  -Series DA803 `
+  -Pitch 7.5 `
+  -Poles '8' `
+  -BodyColor black `
+  -CoverColor black `
+  -SpacerColor '#D9D9D9' `
+  -HousingColors black `
+  -ActuatorColors '#D9D9D9,#D9D9D9,#D9D9D9,#D9D9D9,black,black,black,red' `
+  -TerminalPinColor silver `
+  -Variant black-gray-gray-gray-gray-gray-black-black-black-red `
   -FreeCADExe 'D:\destool\FreeCAD\bin\FreeCAD.exe'
 ```

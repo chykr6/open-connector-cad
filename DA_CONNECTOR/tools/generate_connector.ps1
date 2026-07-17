@@ -10,6 +10,7 @@ param(
 
     [string]$BodyColor,
     [string]$CoverColor,
+    [string]$SpacerColor,
     [string]$HousingColors,
     [string]$ActuatorColors,
     [string]$TerminalPinColor,
@@ -43,6 +44,7 @@ $request = @{
     poles = $Poles
     body_color = $BodyColor
     cover_color = $CoverColor
+    spacer_color = $SpacerColor
     housing_colors = $HousingColors
     actuator_colors = $ActuatorColors
     terminal_pin_color = $TerminalPinColor

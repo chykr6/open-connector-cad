@@ -103,12 +103,28 @@ def hex_to_rgb(color):
     return tuple(int(value[index : index + 2], 16) / 255.0 for index in (0, 2, 4))
 
 
+def housing_width(profile):
+    return float(profile.get("housing_width", profile["pitch"]))
+
+
+def spacer_width(profile):
+    return float(profile.get("inter_pole_spacer_width", 0.0))
+
+
+def pole_left(profile, index):
+    return float(profile["pitch"]) * int(index)
+
+
 def overall_width(profile, poles):
-    return float(profile["pitch"]) * int(poles) + float(profile["cover_width"])
+    return (
+        pole_left(profile, int(poles) - 1)
+        + housing_width(profile)
+        + float(profile["cover_width"])
+    )
 
 
 def pole_center(profile, index):
-    return float(profile["pitch"]) * (int(index) + 0.5)
+    return pole_left(profile, index) + housing_width(profile) / 2.0
 
 
 def safe_fillet(shape, radius):
@@ -223,12 +239,12 @@ def cut_side_dimples(shape, profile, x_start, direction):
 
 
 def make_housing(profile, poles, index):
-    """生成一个电气模块外壳；每极宽度严格等于 pitch。"""
-    pitch = float(profile["pitch"])
-    left = int(index) * pitch
+    """生成一个电气模块外壳；pitch 只控制极位中心距。"""
+    width = housing_width(profile)
+    left = pole_left(profile, index)
     center = pole_center(profile, index)
     shape = Part.makeBox(
-        pitch,
+        width,
         float(profile["depth"]),
         float(profile["body_height"]),
         App.Vector(left, 0, 0),
@@ -256,16 +272,33 @@ def make_housing(profile, poles, index):
     shape = shape.cut(make_top_channel_cut(profile, center))
 
     # 主体前上缘切出斜坡，给手指从压杆下方进入的空间。
-    shape = shape.cut(make_front_slope_cut(profile, left, pitch))
+    shape = shape.cut(make_front_slope_cut(profile, left, width))
 
     if int(index) == 0:
         shape = cut_side_dimples(shape, profile, left - 0.05, 1)
     return shape.removeSplitter()
 
 
+def make_inter_pole_spacer(profile, index):
+    """生成相邻 5.0 mm 功能主体之间的绝缘间隔块。"""
+    width = spacer_width(profile)
+    if width <= 0:
+        raise ValueError("inter-pole spacer width must be positive")
+    left = pole_left(profile, index) + housing_width(profile)
+    shape = Part.makeBox(
+        width,
+        float(profile["depth"]),
+        float(profile["body_height"]),
+        App.Vector(left, 0, 0),
+    )
+    shape = safe_fillet(shape, float(profile["body_edge_radius"]))
+    shape = shape.cut(make_front_slope_cut(profile, left, width))
+    return shape.removeSplitter()
+
+
 def make_side_cover(profile, poles):
     """生成独立侧盖；侧盖没有电气开口。"""
-    left = int(poles) * float(profile["pitch"])
+    left = pole_left(profile, int(poles) - 1) + housing_width(profile)
     shape = Part.makeBox(
         float(profile["cover_width"]),
         float(profile["depth"]),
@@ -374,9 +407,11 @@ def add_parameters(
     pin_color,
     variant,
     cover_color=None,
+    spacer_color=None,
     housing_colors=None,
 ):
     cover_color = normalize_color(cover_color or body_color)
+    spacer_color = normalize_color(spacer_color or cover_color)
     housing_colors = housing_colors or [body_color] * int(poles)
     obj = doc.addObject("App::FeaturePython", "Parameters")
     obj.Label = "Connector generation parameters"
@@ -387,6 +422,7 @@ def add_parameters(
         ("App::PropertyString", "Variant", str(variant or "")),
         ("App::PropertyString", "BodyColor", normalize_color(body_color)),
         ("App::PropertyString", "CoverColor", cover_color),
+        ("App::PropertyString", "SpacerColor", spacer_color),
         ("App::PropertyString", "TerminalPinColor", normalize_color(pin_color)),
         ("App::PropertyString", "PinNumberingDirection", "CoverSideHighXToLowX"),
         ("App::PropertyString", "LeverHingeSide", "Rear"),
@@ -399,6 +435,10 @@ def add_parameters(
     obj.Poles = int(poles)
     obj.addProperty("App::PropertyLength", "Pitch", "Dimensions")
     obj.Pitch = float(profile["pitch"])
+    obj.addProperty("App::PropertyLength", "HousingWidth", "Dimensions")
+    obj.HousingWidth = housing_width(profile)
+    obj.addProperty("App::PropertyLength", "InterPoleSpacerWidth", "Dimensions")
+    obj.InterPoleSpacerWidth = spacer_width(profile)
     obj.addProperty("App::PropertyLength", "OverallWidth", "Dimensions")
     obj.OverallWidth = overall_width(profile, poles)
     obj.addProperty("App::PropertyLength", "Depth", "Dimensions")
@@ -432,6 +472,7 @@ def generate_one(
     variant=None,
     output_dir=None,
     cover_color=None,
+    spacer_color=None,
     housing_colors=None,
 ):
     poles = int(poles)
@@ -440,6 +481,7 @@ def generate_one(
     if len(actuator_colors) != poles:
         raise ValueError("actuator color count must match poles")
     cover_color = normalize_color(cover_color or body_color)
+    spacer_color = normalize_color(spacer_color or cover_color)
     housing_colors = housing_colors or [body_color] * poles
     if len(housing_colors) != poles:
         raise ValueError("housing color count must match poles")
@@ -474,6 +516,7 @@ def generate_one(
         terminal_pin_color,
         variant,
         cover_color,
+        spacer_color,
         housing_colors,
     )
 
@@ -496,6 +539,19 @@ def generate_one(
                 pole_no,
             )
         )
+        if spacer_width(profile) > 0 and index < poles - 1:
+            neighbor_pin = poles - index - 1
+            export_objects.append(
+                add_feature(
+                    doc,
+                    assembly,
+                    "Spacer_P%d_P%d" % (neighbor_pin, pole_no),
+                    "Spacer between P%d and P%d" % (neighbor_pin, pole_no),
+                    make_inter_pole_spacer(profile, index),
+                    spacer_color,
+                    "InterPoleSpacer",
+                )
+            )
         export_objects.append(
             add_feature(
                 doc,
@@ -570,6 +626,7 @@ def build_argument_parser():
     parser.add_argument("--poles", required=True, help="One value or comma-separated values")
     parser.add_argument("--body-color")
     parser.add_argument("--cover-color")
+    parser.add_argument("--spacer-color")
     parser.add_argument("--housing-colors")
     parser.add_argument("--actuator-colors")
     parser.add_argument("--terminal-pin-color")
@@ -593,6 +650,9 @@ def main(argv=None):
     defaults = profile["default_colors"]
     body_color = normalize_color(args.body_color or defaults["body"])
     cover_color = normalize_color(args.cover_color or body_color)
+    spacer_color = normalize_color(
+        args.spacer_color or defaults.get("spacer", cover_color)
+    )
     pin_color = normalize_color(args.terminal_pin_color or defaults["terminal_pin"])
     pole_counts = parse_poles(args.poles)
     results = []
@@ -612,6 +672,7 @@ def main(argv=None):
                 variant,
                 args.output_dir,
                 cover_color,
+                spacer_color,
                 housing_colors,
             )
         )
