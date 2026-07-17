@@ -12,16 +12,19 @@
 ## 项目目标
 
 - 本仓库用于 FreeCAD 参数化零件设计、PCBA 展示模型和通用 STEP 交换文件管理。
-- 当前主要零件为 DA803 3.5 mm 间距模块化端子。
+- 当前主要零件为地安 DA803 扳手端子系列，官方型号包括 DA803-3.5、DA803-5.0、DA803-7.5。
 - 模型侧重外观、安装尺寸和 PCBA 展示，不要求不可见的内部弹片结构。
 
 ## 目录约定
 
-- `DA_CONNECTOR/tools/`：通用生成、导出和验证工具。
-- `DA_CONNECTOR/tests/`：通用参数与 FreeCAD 几何测试。
-- `DA_CONNECTOR/products/<series>/`：对应产品的 profile、产品说明、生成模型，以及按具体型号分类的规格书和渲染图。
-- `docs/design/`：确认过的模型设计说明和尺寸假设。
-- `docs/plans/`：实施计划和建模步骤记录。
+- `<series>/`：根目录下的产品系列目录，例如 `DA803/`。
+- `<series>/tools/`：该系列的生成、导出、渲染和验证工具。
+- `<series>/tests/`：该系列的参数与 FreeCAD 几何测试。
+- `<series>/profiles/`：该系列不同型号或间距的 JSON profile。
+- `<series>/generated/`：该系列已验证的 FCStd、STEP 和预览 PNG。
+- `<series>/references/`：按具体型号分类的规格书和渲染图。
+- 确认多个系列确实共享同一能力前，不提前建立根目录通用工具；不同品牌或结构明显不同的端子应保留自己的工具和测试。
+- 历史实施过程不长期维护为当前文档；需要追溯时通过 Git 历史查看。
 - `.agents/skills/`：项目本地技能；依赖必须安装在仓库内，不得全局安装。
 
 ## FreeCAD 建模规则
@@ -39,8 +42,8 @@
 通用端子模型的标准验证命令：
 
 ```powershell
-& '.\DA_CONNECTOR\tools\verify_connector.ps1' `
-  -Model '.\DA_CONNECTOR\products\DA803\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
+& '.\DA803\tools\verify_connector.ps1' `
+  -Model '.\DA803\generated\DA803-350\DA803-350-3P-black-blue-green.FCStd'
 ```
 
 只有在命令退出码为 0，并输出 `VERIFY_OK` 后，才能声称模型通过验证。

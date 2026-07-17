@@ -83,10 +83,10 @@ def parse_poles(specification):
 
 def load_profile(series, pitch, connector_dir=None):
     """按系列和间距读取独立尺寸配置，禁止跨间距缩放复用。"""
-    # tools 位于 DA_CONNECTOR/tools；产品 profile 位于 products/<series>/profiles。
-    base_dir = connector_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # tools 位于系列目录下；profile 位于同一系列目录的 profiles。
+    product_dir = connector_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     filename = "%s-%s.json" % (str(series).upper(), pitch_code(pitch))
-    path = os.path.join(base_dir, "products", str(series).upper(), "profiles", filename)
+    path = os.path.join(product_dir, "profiles", filename)
     if not os.path.isfile(path):
         raise ValueError("profile not found: %s" % path)
     with open(path, "r", encoding="utf-8") as stream:
@@ -486,11 +486,9 @@ def generate_one(
     if len(housing_colors) != poles:
         raise ValueError("housing color count must match poles")
 
-    connector_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    product_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     base_dir = output_dir or os.path.join(
-        connector_dir,
-        "products",
-        str(profile["series"]).upper(),
+        product_dir,
         "generated",
         "%s-%s" % (profile["series"], pitch_code(profile["pitch"])),
     )
@@ -645,8 +643,8 @@ def request_to_argv(request):
 
 def main(argv=None):
     args = build_argument_parser().parse_args(argv)
-    connector_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    profile = load_profile(args.series, args.pitch, connector_dir)
+    product_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    profile = load_profile(args.series, args.pitch, product_dir)
     defaults = profile["default_colors"]
     body_color = normalize_color(args.body_color or defaults["body"])
     cover_color = normalize_color(args.cover_color or body_color)

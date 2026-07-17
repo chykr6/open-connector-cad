@@ -63,7 +63,7 @@ try {
         [IO.Path]::GetFullPath($OutputDir)
     }
     else {
-        Join-Path (Split-Path -Parent $toolsDir) "products\$($Series.ToUpperInvariant())\generated\$($Series.ToUpperInvariant())-$pitchCode"
+        Join-Path (Split-Path -Parent $toolsDir) "generated\$($Series.ToUpperInvariant())-$pitchCode"
     }
     $expected = foreach ($poleText in $Poles.Split(',')) {
         $poleCount = [int]$poleText.Trim()
