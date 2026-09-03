@@ -99,7 +99,7 @@ Y = 4.60 mm 和 9.60 mm
 - `generated/DA803-350/DA803-350-3P-black-blue-green.FCStd`
 - `generated/DA803-350/DA803-350-3P-black-blue-green.step`
 - `generated/DA803-350/DA803-350-4P-red-green-blue-black.FCStd/.step/.png`
-- `generated/DA803-350/DA803-350-4P-black-blue-green-red.FCStd/.step/.png`
+- `generated/DA803-350/DA803-350-4P-black-blue-green-red.FCStd/.step/.png`（4P；主体全黑，压杆 Pin 1 → Pin 4 为黑/蓝/绿/红）
 - `generated/DA803-350/DA803-350-4P-all-black.FCStd/.step`
 - `generated/DA803-350/DA803-350-8P-all-black.FCStd/.step`
 - `generated/DA803-350/DA803-350-8P-black-blue-black-blue-black-blue-black-blue.FCStd/.step`
@@ -125,6 +125,22 @@ Y = 4.60 mm 和 9.60 mm
   -ActuatorColors 'black,blue,green' `
   -TerminalPinColor silver `
   -Variant black-blue-green
+```
+
+生成 `DA803-3.5` 主体全黑、压杆按 Pin 1 → Pin 4 为黑/蓝/绿/红的 4P：
+
+```powershell
+& '.\DA803\tools\generate_connector.ps1' `
+  -Series DA803 `
+  -Pitch 3.5 `
+  -Poles '4' `
+  -BodyColor black `
+  -CoverColor black `
+  -HousingColors black `
+  -ActuatorColors 'black,blue,green,red' `
+  -TerminalPinColor silver `
+  -Variant black-blue-green-red `
+  -FreeCADExe 'D:\destool\FreeCAD\bin\FreeCAD.exe'
 ```
 
 生成 `DA803-5.0` 黑/红 2P：
